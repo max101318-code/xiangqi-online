@@ -77,12 +77,44 @@ function findKing(g,color){
   for(let r=0;r<10;r++)for(let c=0;c<9;c++)if(g.b[r][c]?.t===kt)return[r,c];
   return null;
 }
+function attacksSquare(g,attackerColor,fromR,fromC,targetR,targetC){
+  const a=g.b[fromR]?.[fromC];
+  if(!a || !own(a.t,attackerColor) || !inside(targetR,targetC)) return false;
+  const d=g.b[targetR][targetC];
+  // Attack detection is intentionally separate from `legal()` so a check can
+  // be recognized without accidentally applying turn/move legality rules.
+  // The user's special rules allow a king to face the enemy king and leave
+  // its own king attacked; only the piece's attack pattern matters here.
+  const t=a.t.toLowerCase();
+  const R=targetR-fromR,C=targetC-fromC,ar=Math.abs(R),ac=Math.abs(C);
+  if(fromR===targetR && fromC===targetC) return false;
+  if(t==='k'){
+    return C===0 && clearCount(g.b,fromR,fromC,targetR,targetC)===0;
+  }
+  if(t==='a') return ar===1 && ac===1 && palace(targetR,targetC,attackerColor);
+  if(t==='b'){
+    if(!(ar===2&&ac===2)) return false;
+    if((attackerColor==='red'&&targetR>4)||(attackerColor==='black'&&targetR<5)) return false;
+    return !g.b[fromR+R/2][fromC+C/2];
+  }
+  if(t==='n'){
+    if(!((ar===2&&ac===1)||(ar===1&&ac===2))) return false;
+    const lr=fromR+(ar===2?Math.sign(R):0);
+    const lc=fromC+(ac===2?Math.sign(C):0);
+    return !g.b[lr][lc];
+  }
+  if(t==='r') return (R===0||C===0) && clearCount(g.b,fromR,fromC,targetR,targetC)===0;
+  if(t==='c') return (R===0||C===0) && d && clearCount(g.b,fromR,fromC,targetR,targetC)===1;
+  if(t==='p'){
+    const f=attackerColor==='red'?1:-1;
+    const crossed=attackerColor==='red'?fromR>=5:fromR<=4;
+    return (R===f&&C===0) || (crossed&&R===0&&ac===1);
+  }
+  return false;
+}
 function isAttacked(g,attackerColor,targetR,targetC){
-  const p={color:attackerColor};
   for(let r=0;r<10;r++)for(let c=0;c<9;c++){
-    if(!g.b[r][c] || !own(g.b[r][c].t,attackerColor)) continue;
-    if(!legal(g,p,r,c,targetR,targetC)) continue;
-    return true;
+    if(attacksSquare(g,attackerColor,r,c,targetR,targetC)) return true;
   }
   return false;
 }
@@ -166,7 +198,8 @@ function applyMove(x,p,m){
   if(dst&&dst.t.toLowerCase()==='k'){
     g.winner=p.color;g.winnerPid=p.pid;g.endedReason=`${p.color==='red'?'紅方':'黑方'}直接吃掉${p.color==='red'?'黑將':'紅帥'}，獲勝！`;g.turnDeadline=null;
   }else{
-    const target=checkTarget(g,p.color);if(target)x.checkEvent={id:eventId(),by:p.color,target};
+    const target=checkTarget(g,p.color);
+    x.checkEvent=target?{id:eventId(),by:p.color,target}:null;
     g.turn=p.color==='red'?'black':'red';setTurnDeadline(x);finishByNoMoves(x);
   }
   return{ok:true};
@@ -194,7 +227,11 @@ function aiTurn(x){
   const level=x.difficulty||'normal';let choice;
   if(level==='easy')choice=moves[Math.floor(Math.random()*moves.length)];
   else{const ranked=moves.map(m=>({...m,score:scoreMove(x.g,m,level)})).sort((a,b)=>b.score-a.score);const pool=level==='hard'?ranked.slice(0,3):ranked.slice(0,7);choice=pool[Math.floor(Math.random()*pool.length)];}
-  const fake={pid:'ai',color:'black'};const res=applyMove(x,fake,choice);if(res.ok){broadcast(x);if(!x.g.winner&&x.checkEvent){setTimeout(()=>{x.checkEvent=null;broadcast(x);},1600);}}
+  const fake={pid:'ai',color:'black'};const res=applyMove(x,fake,choice);if(res.ok){
+    const checkId=x.checkEvent?.id;
+    broadcast(x);
+    if(checkId)setTimeout(()=>{if(x.checkEvent?.id===checkId){x.checkEvent=null;broadcast(x);}},1500);
+  }
 }
 function timeOut(x){
   if(x.g.winner||!x.g.turn)return;
@@ -250,7 +287,12 @@ wss.on('connection',ws=>{
       x.rps.choices[p.pid]=m.choice;if(x.players.every(q=>x.rps.choices[q.pid]))resolveRps(x);else broadcast(x);
     } else if(m.action==='chooseColor'&&!x.ai){const e=chooseColor(x,p,m.color);if(e)send(p,{type:'error',message:e});else broadcast(x);
     } else if(m.action==='move'){
-      const res=applyMove(x,p,m);if(res.error)send(p,{type:'error',message:res.error});else{broadcast(x);if(x.ai&&x.g.turn==='black'&&!x.g.winner)setTimeout(()=>aiTurn(x),500);}
+      const res=applyMove(x,p,m);if(res.error)send(p,{type:'error',message:res.error});else{
+        const checkId=x.checkEvent?.id;
+        broadcast(x);
+        if(checkId){setTimeout(()=>{if(x.checkEvent?.id===checkId){x.checkEvent=null;broadcast(x);}},1500);}
+        if(x.ai&&x.g.turn==='black'&&!x.g.winner)setTimeout(()=>aiTurn(x),500);
+      }
     } else if(m.action==='proposal'){
       if(x.ai && m.kind==='undo'){
         if(x.g.winner)return send(p,{type:'error',message:'對局已結束，不能悔棋'});
