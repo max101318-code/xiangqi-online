@@ -233,7 +233,7 @@ wss.on('connection',ws=>{
     if(m.action==='create'){
       x={id:rid(),players:[],g:newGame(),ai:false,rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null};rooms.set(x.id,x);
       p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:null,connected:true};x.players.push(p);
-      send(p,{type:'room',roomId:x.id,color:null,mode:'online'});broadcast(x);
+      send(p,{type:'room',roomId:x.id,color:null,mode:'online'});send(p,snapshot(x,p));broadcast(x);
     } else if(m.action==='ai'){
       const difficulty=['easy','normal','hard'].includes(m.difficulty)?m.difficulty:'normal';x={id:rid(),players:[],g:newGame(),ai:true,difficulty,undoStack:[],checkEvent:null,proposal:null};rooms.set(x.id,x);x.g.turn='red';setTurnDeadline(x);
       p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:'red',connected:true};x.players.push(p);send(p,{type:'room',roomId:null,color:'red',mode:'ai'});send(p,snapshot(x,p));
@@ -265,7 +265,7 @@ wss.on('connection',ws=>{
     } else if(m.action==='inviteRematch'&&!x.ai){
       if(!x.g.winner)return send(p,{type:'error',message:'對局結束後才能邀請再戰'});
       if(x.rematchInvite)return send(p,{type:'error',message:'已經有再戰邀請正在等待'});
-      const other=x.players.find(q=>q.pid!==p.pid);x.rematchInvite={fromPid:p.pid,toPid:other.pid};send(other,{type:'rematch-invite',fromName:p.name});broadcast(x);
+      const other=x.players.find(q=>q.pid!==p.pid);x.rematchInvite={fromPid:p.pid,toPid:other.pid};send(other,{type:'rematch-invite',fromName:p.name,roomId:x.id,ended:true});broadcast(x);
     } else if(m.action==='rematchResponse'&&!x.ai){
       const inv=x.rematchInvite;if(!inv||inv.toPid!==p.pid)return send(p,{type:'error',message:'沒有等待中的再戰邀請'});x.rematchInvite=null;
       if(m.accept){resetOnlineRound(x);broadcast(x);}else{const inviter=x.players.find(q=>q.pid===inv.fromPid);if(inviter)send(inviter,{type:'notice',message:`${p.name} 暫時不進行下一場。`});broadcast(x);}

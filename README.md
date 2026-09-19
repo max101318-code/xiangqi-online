@@ -30,3 +30,7 @@ npm start
 Build Command: `npm install`
 Start Command: `npm start`
 Plan 可使用 Render 提供的免費方案（如帳號介面仍提供）。
+
+
+## 修正
+再戰邀請現在只會由已結束的雙人對局送出；進入房間、重新開局或尚未結束的對局都會自動隱藏再戰邀請。

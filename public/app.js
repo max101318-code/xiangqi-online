@@ -1,4 +1,4 @@
-let ws=null,state=null,myPid=null,myColor=null,mode='home',selected=null,lastCheckId=null,checkTimer=null,proposalVisible=false,avatar='🧑🏻',soundOn=true,clockTimer=null;
+let ws=null,state=null,myPid=null,myColor=null,mode='home',selected=null,lastCheckId=null,checkTimer=null,proposalVisible=false,avatar='🧑🏻',soundOn=true,clockTimer=null,lastBoard=null;
 const $=id=>document.getElementById(id);
 const CH={K:'帥',A:'仕',B:'相',N:'傌',R:'俥',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'炮',p:'卒'};
 const AVATARS=['🧑🏻','🧑🏼','🧑🏽','🧑🏾','🧑🏿','🐱','🐼','🦊','🐯','🐸','🤖','👾','🦄','🐲','😎','🥷'];
@@ -7,15 +7,20 @@ function saveProfile(){localStorage.setItem('xqName',$('home-name').value.trim()
 function connect(){if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return;ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);ws.onopen=()=>toast('已連線到遊戲伺服器');ws.onclose=()=>toast('連線已中斷，請重新整理。','error');ws.onerror=()=>toast('無法連線到遊戲伺服器。','error');ws.onmessage=e=>handle(JSON.parse(e.data));}
 function send(o){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(o));else toast('尚未連線','error');}
 function toast(text,kind=''){const t=$('toast');t.textContent=text;t.className='toast '+kind;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2200);}
-function showScreen(s){['home-screen','lobby-screen','game-screen'].forEach(id=>$(id).hidden=id!==s);window.scrollTo({top:0,behavior:'smooth'});}
+function showScreen(s){if(s!=='game-screen')hideRematchInvite();['home-screen','lobby-screen','game-screen'].forEach(id=>$(id).hidden=id!==s);window.scrollTo({top:0,behavior:'smooth'});}
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
 function handle(m){
  if(m.type==='error'){toast(m.message,'error');return;}
  if(m.type==='notice'){toast(m.message);return;}
  if(m.type==='proposal'){showProposal(m.kind,m.fromName);return;}
- if(m.type==='rematch-invite'){showRematchInvite(m.fromName);return;}
- if(m.type==='room'){mode=m.mode||'online';myColor=m.color||null;showScreen(mode==='ai'?'game-screen':'lobby-screen');updateLobby();if(mode==='ai')toast(`單人模式：${difficultyName($('difficulty')?.value||'normal')}`);return;}
- if(m.type==='state'){state=m;myColor=m.color||myColor;renderState();if(m.checkEvent)showCheck(m.checkEvent);}
+ if(m.type==='rematch-invite'){if(m.ended===true && m.roomId && state?.roomId===m.roomId && state?.mode==='online' && state?.winner){showRematchInvite(m.fromName);}return;}
+ if(m.type==='room'){hideRematchInvite();mode=m.mode||'online';myColor=m.color||null;showScreen(mode==='ai'?'game-screen':'lobby-screen');updateLobby();if(mode==='ai')toast(`單人模式：${difficultyName($('difficulty')?.value||'normal')}`);return;}
+ if(m.type==='state'){
+  if(Array.isArray(m.board)&&m.board.length===10&&m.board.every(r=>Array.isArray(r)&&r.length===9)) lastBoard=m.board;
+  else if(lastBoard) m.board=lastBoard;
+  else {toast('棋盤資料尚未同步完成，正在重新整理…','error');return;}
+  state=m;myColor=m.color||myColor;if(!m.winner)hideRematchInvite();renderState();if(m.checkEvent)showCheck(m.checkEvent);
+ }
 }
 function updateLobby(){const ps=state?.players||[];const p1=ps[0],p2=ps[1];$('lobby-room').textContent=state?.roomId||'——';if(p1){$('lobby-p1-name').textContent=p1.name;$('lobby-p1-avatar').textContent=p1.avatar;$('lobby-p1-side').textContent=p1.color==='red'?'紅方':p1.color==='black'?'黑方':'尚未選色';}if(p2){$('lobby-p2-name').textContent=p2.name;$('lobby-p2-avatar').textContent=p2.avatar;$('lobby-p2-side').textContent=p2.color==='red'?'紅方':p2.color==='black'?'黑方':'尚未選色';}else{$('lobby-p2-name').textContent='等待加入';$('lobby-p2-avatar').textContent='?';$('lobby-p2-side').textContent='—';}
  const players=ps.length;$('lobby-message').textContent=players<2?'把房號分享給朋友即可加入。':state?.rps?.phase==='rps'?'兩位玩家已加入，請開始猜拳。':state?.rps?.phase==='choose-color'?(state.rps.isRpsWinner?'你猜拳獲勝，請選顏色。':'猜拳落敗，等待對方選色。'):'已決定先後手，進入棋局…';
@@ -23,13 +28,33 @@ function updateLobby(){const ps=state?.players||[];const p1=ps[0],p2=ps[1];$('lo
  const rpsPhase=players===2&&state?.rps?.phase==='rps';$('rps-panel').hidden=!rpsPhase;if(rpsPhase){let t=state.rps.result||'請雙方各自出拳。';if(state.rps.youChoice)t='你已出拳，等待對方…';if(state.rps.hasOpponentChoice&&!state.rps.youChoice)t='對方已出拳，請你出拳。';$('rps-status').textContent=t;document.querySelectorAll('[data-choice]').forEach(b=>b.disabled=!!state.rps.youChoice);}
  const cp=players===2&&state?.rps?.phase==='choose-color';$('color-panel').hidden=!cp;if(cp){$('color-status').textContent=state.rps.isRpsWinner?'你是勝者，選紅方或黑方；你會先手。':'你是落敗者，等待對方選色；你會後手。';document.querySelectorAll('[data-color]').forEach(b=>b.disabled=!state.rps.isRpsWinner);}
 }
-function renderState(){if(!state)return;mode=state.mode||mode;if(mode==='online'&&state.rps?.phase!=='done'){showScreen('lobby-screen');updateLobby();return;}showScreen('game-screen');$('game-room-meta').textContent=mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:`房號 ${state.roomId||'—'}`;
- const me=state.players?.find(p=>p.pid===getMyPid(state));const opp=state.players?.find(p=>p.pid!==getMyPid(state));const my=me||{name:'玩家',avatar:avatar,color:myColor},op=opp||{name:'電腦',avatar:'🤖',color:'black'};
- $('you-avatar').textContent=my.avatar||avatar;$('you-name').textContent=my.name;$('you-side').textContent=my.color==='red'?'紅方':my.color==='black'?'黑方':'待定';$('opp-avatar').textContent=op.avatar||'🤖';$('opp-name').textContent=op.name;$('opp-side').textContent=op.color==='red'?'紅方':op.color==='black'?'黑方':'待定';
- renderBoard();renderHistory();renderTurn();updateCountdown();updateActions();updateLobby();
+function renderState(){
+ if(!state||!Array.isArray(state.board)||state.board.length!==10)return;
+ mode=state.mode||mode;
+ if(mode==='online'&&state.rps?.phase!=='done'){showScreen('lobby-screen');updateLobby();return;}
+ showScreen('game-screen');
+ $('game-room-meta').textContent=mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:`房號 ${state.roomId||'—'}`;
+ const me=state.players?.find(p=>p.pid===getMyPid(state));const opp=state.players?.find(p=>p.pid!==getMyPid(state));
+ const my=me||{name:'玩家',avatar:avatar,color:myColor},op=opp||{name:'電腦',avatar:'🤖',color:'black'};
+ $('you-avatar').textContent=my.avatar||avatar;$('you-name').textContent=my.name;$('you-side').textContent=my.color==='red'?'紅方':my.color==='black'?'黑方':'待定';
+ $('opp-avatar').textContent=op.avatar||'🤖';$('opp-name').textContent=op.name;$('opp-side').textContent=op.color==='red'?'紅方':op.color==='black'?'黑方':'待定';
+ renderBoard();renderHistory();renderTurn();updateCountdown();updateActions();
 }
-function getMyPid(st){return st.players?.find(p=>p.color===myColor)?.pid||myPid||st.players?.[0]?.pid;}
-function renderBoard(){const b=$('board-points');b.innerHTML='';const hs=selected?hints(selected[0],selected[1]):[],hm=new Map(hs.map(x=>[`${x[0]},${x[1]}`,x[2]]));for(let r=0;r<10;r++)for(let c=0;c<9;c++){const el=document.createElement('button');el.type='button';el.className='point';el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;const p=state.board[r][c],key=`${r},${c}`;if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');if(hm.has(key))el.classList.add('hint',hm.get(key));if(p){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp);}el.onclick=()=>clickCell(r,c);b.appendChild(el);}}
+function getMyPid(st){return st.players?.find(p=>p.pid===myPid)?.pid||st.players?.find(p=>p.color===myColor)?.pid||st.players?.[0]?.pid;}
+function renderBoard(){
+ const b=$('board-points');
+ if(!b||!state||!Array.isArray(state.board)||state.board.length!==10||!state.board.every(r=>Array.isArray(r)&&r.length===9)) return;
+ b.innerHTML='';
+ const hs=selected?hints(selected[0],selected[1]):[],hm=new Map(hs.map(x=>[`${x[0]},${x[1]}`,x[2]]));
+ for(let r=0;r<10;r++)for(let c=0;c<9;c++){
+   const el=document.createElement('button');el.type='button';el.className='point';el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;
+   const p=state.board[r][c],key=`${r},${c}`;
+   if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');
+   if(hm.has(key))el.classList.add('hint',hm.get(key));
+   if(p&&CH[p.t]){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp);}
+   el.onclick=()=>clickCell(r,c);b.appendChild(el);
+ }
+}
 function renderHistory(){ $('history').innerHTML=(state.history||[]).map(x=>`<div class="hist"><b>${x.n}.</b> ${x.color==='red'?'紅':'黑'}${x.piece} <span>(${x.from[0]},${x.from[1]})→(${x.to[0]},${x.to[1]})</span>${x.captured?` <em>吃${x.captured}</em>`:''}</div>`).join('')||'<div class="hist">尚未有走棋紀錄</div>'; $('move-count').textContent=`${state.history?.length||0} 手`;}
 function renderTurn(){if(state.winner){$('turn-message').textContent=state.endedReason||`勝者：${state.winner==='red'?'紅方':state.winner==='black'?'黑方':'和棋'}`;return;}$('turn-message').textContent=state.turn===myColor?'輪到你：請選擇棋子':state.turn?`等待${state.turn==='red'?'紅方':'黑方'}走棋`:'等待開始…';}
 function updateCountdown(){clearInterval(clockTimer);clockTimer=setInterval(()=>{if(!state?.turnDeadline||state.winner){$('countdown').textContent='—';return;}const sec=Math.max(0,Math.ceil((state.turnDeadline-Date.now())/1000));$('countdown').textContent=String(sec).padStart(2,'0');},250);}
