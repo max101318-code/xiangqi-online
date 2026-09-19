@@ -1,4 +1,4 @@
-# 中國象棋 Online v2.6.0
+# 中國象棋 Online v2.6.2
 
 依使用者提供的中國象棋規則製作，並加入網站化功能。
 
@@ -24,3 +24,7 @@ Build Command: `npm install`
 Start Command: `npm start`
 
 Render 連接 GitHub 後，Commit 到 main 會自動部署。
+
+
+## v2.6.2 玩家資料
+名字與自訂頭像分別有明確的儲存按鈕；只有按下儲存頭像後的新頭像才會作為進入下一場遊戲時使用的玩家頭像。資料以瀏覽器 localStorage 保存。
