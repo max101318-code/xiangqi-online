@@ -6,7 +6,7 @@ const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
 const rooms = new Map();
-const ASSETS = {'/index.html':'index.html','/app.js':'app.js','/style.css':'style.css'};
+const pub = path.join(__dirname, 'public');
 const TYPES = { K:'帥', A:'仕', B:'相', N:'傌', R:'俥', C:'炮', P:'兵', k:'將', a:'士', b:'象', n:'馬', r:'車', c:'炮', p:'卒' };
 const START = [
   ['R',0,0],['N',0,1],['B',0,2],['A',0,3],['K',0,4],['A',0,5],['B',0,6],['N',0,7],['R',0,8],
@@ -38,7 +38,16 @@ function legal(g,p,r1,c1,r2,c2){
   if(d&&own(d.t,p.color))return'目標已有己方棋子';
   const t=a.t.toLowerCase(),R=r2-r1,C=c2-c1,ar=Math.abs(R),ac=Math.abs(C);
   if(t==='k'){
-    if(ar+ac!==1||!palace(r2,c2,p.color))return'將／帥只能在己方九宮內直走一格';
+    // 一般情況：將／帥只能在己方九宮內直走一格。
+    // 特殊規則：若目標就是對方的將／帥，且兩將同一直線、
+    // 中間完全沒有棋子，則允許像車一樣直接滑過去吃將／帥。
+    const targetIsOppKing = d && d.t.toLowerCase()==='k' && !own(d.t,p.color);
+    const kingFacingCapture = targetIsOppKing && C===0 && clearCount(g.b,r1,c1,r2,c2)===0;
+    if(kingFacingCapture){
+      // 通過：這是唯一能讓將／帥跨出九宮的情況。
+    } else if(ar+ac!==1||!palace(r2,c2,p.color)){
+      return'將／帥只能在己方九宮內直走一格（只有面對對方將／帥且路線全空時，才可像車一樣直接吃將／帥）';
+    }
   } else if(t==='a'){
     if(ar!==1||ac!==1||!palace(r2,c2,p.color))return'士／仕只能在己方九宮內斜走一格';
   } else if(t==='b'){
@@ -182,13 +191,8 @@ function aiTurn(x){
 }
 
 const server=http.createServer((req,res)=>{
-  let u=req.url.split('?')[0];
-  if(u==='/healthz'){res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8'});return res.end('ok');}
-  if(u==='/')u='/index.html';
-  const fileName=ASSETS[u];
-  if(!fileName){res.writeHead(404);return res.end('404');}
-  const f=path.join(__dirname,fileName);
-  if(!fs.existsSync(f)){res.writeHead(404);return res.end('404');}
+  let u=req.url.split('?')[0];if(u==='/')u='/index.html';const f=path.join(pub,u);
+  if(!f.startsWith(pub)||!fs.existsSync(f)){res.writeHead(404);return res.end('404');}
   const mime={'.html':'text/html;charset=utf-8','.js':'text/javascript;charset=utf-8','.css':'text/css;charset=utf-8'}[path.extname(f)]||'application/octet-stream';res.writeHead(200,{'Content-Type':mime});fs.createReadStream(f).pipe(res);
 });
 const wss=new WebSocketServer({server});
@@ -244,4 +248,4 @@ wss.on('connection',ws=>{
     } else broadcast(x);
   });
 });
-server.listen(PORT,'0.0.0.0',()=>console.log('Xiangqi online on '+PORT));
+server.listen(PORT,()=>console.log('Xiangqi online on '+PORT));

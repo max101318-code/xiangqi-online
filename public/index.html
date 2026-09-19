@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>中國象棋 Online</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="check-overlay" class="check-overlay" hidden aria-live="assertive"><div class="check-ink"><div class="check-word">將軍!</div><div id="check-target" class="check-target">黑將受到攻擊</div></div></div>
+<div id="invite-panel" class="invite-panel" hidden><div><strong id="invite-title">對方邀你進行下一場</strong><span id="invite-text">接受後將回到猜拳流程。</span></div><div class="invite-buttons"><button id="accept-rematch">接受再戰</button><button id="reject-rematch">暫不</button></div></div>
+<main>
+<header><div><p class="eyebrow">CHINESE CHESS · ONLINE</p><h1>中國象棋 <span>Online</span></h1><p class="subtitle">兩人即時對弈｜點選棋子查看可走位置</p></div><div class="rules-chip">民間玩法 · 將帥可照面</div></header>
+<section class="bar">
+<label>名稱 <input id="name" value="玩家" maxlength="12"></label>
+<button id="create" class="primary">建立房間</button>
+<label id="room-code-wrap">房間代碼 <input id="rid" placeholder="例如 A1B2C3" maxlength="6"></label>
+<button id="join">加入房間</button>
+<label id="difficulty-wrap">難度 <select id="difficulty"><option value="easy">簡單</option><option value="normal" selected>普通</option><option value="hard">困難</option></select></label>
+<button id="ai" class="ai-button">開始單人對電腦</button>
+<div id="room-meta" class="room-meta"><span id="room-wrap">房號 <b id="room">—</b></span><span>你是 <b id="side">—</b></span></div>
+</section>
+<div id="notice" class="notice">先建立房間、加入朋友，或選擇單人模式。</div>
+<section id="rps-panel" class="rps-panel" hidden><div><strong>猜拳決定先手</strong><span id="rps-status">兩位玩家都加入後，請各自出拳。</span></div><div class="rps-buttons"><button data-choice="剪刀">剪刀</button><button data-choice="石頭">石頭</button><button data-choice="布">布</button></div></section>
+<section id="color-panel" class="color-panel" hidden><div><strong>你猜拳獲勝</strong><span id="color-status">請選擇紅方或黑方。</span></div><div class="color-buttons"><button data-color="red">選紅方</button><button data-color="black">選黑方</button></div></section>
+<section id="rematch-panel" class="rematch-panel" hidden><div><strong id="rematch-title">對局結束</strong><span id="rematch-status">可以邀請對方進行下一場。</span></div><button id="rematch-action">邀請對方再戰</button></section>
+<div class="layout"><section class="game-panel"><div class="board-shell"><div id="board" aria-label="中國象棋棋盤"><svg class="board-lines" viewBox="0 0 8 9" preserveAspectRatio="none" aria-hidden="true"><rect x="0" y="0" width="8" height="9" fill="none" stroke="currentColor" stroke-width="0.035"/><path d="M0 0H8 M0 1H8 M0 2H8 M0 3H8 M0 4H8 M0 5H8 M0 6H8 M0 7H8 M0 8H8 M0 9H8 M0 0V9 M1 0V9 M2 0V9 M3 0V9 M4 0V9 M5 0V9 M6 0V9 M7 0V9 M8 0V9" fill="none" stroke="currentColor" stroke-width="0.018"/><path d="M3 0L5 2 M5 0L3 2 M3 7L5 9 M5 7L3 9" fill="none" stroke="currentColor" stroke-width="0.018"/><path d="M0 4.5H8" fill="none" stroke="currentColor" stroke-width="0.018" stroke-dasharray="0.08 0.08"/></svg><div class="river">楚河 <span>漢界</span></div><div id="board-points"></div></div></div><div class="legend"><span><i class="dot move"></i>可移動</span><span><i class="dot capture"></i>可吃子</span><span>先點棋子，再點目的地</span></div><h3 id="turn">等待另一位玩家…</h3></section>
+<aside><h2>走棋紀錄</h2><div id="history" class="history"></div><div class="help"><strong>操作提示</strong><p>輪到你時先點自己的棋子，再點目的地。綠點是可移動位置，紅框是可吃子位置。</p><p>任何模式偵測到「下一手可以合法吃掉對方將／帥」時，會出現 1.5 秒的「將軍!」提示並播放提示音。</p></div></aside></div>
+</main><script src="app.js"></script></body></html>
