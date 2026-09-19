@@ -1,25 +1,28 @@
 let ws=null,state=null,myPid=null,myColor=null,mode='home',selected=null,lastCheckId=null,checkTimer=null,proposalVisible=false,avatar='🧑🏻',soundOn=true,clockTimer=null,lastBoard=null;
 const $=id=>document.getElementById(id);
 const CH={K:'帥',A:'仕',B:'相',N:'傌',R:'俥',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'炮',p:'卒'};
+const INITIAL_BOARD=()=>{const b=Array.from({length:10},()=>Array(9).fill(null));[['R',0,0],['N',0,1],['B',0,2],['A',0,3],['K',0,4],['A',0,5],['B',0,6],['N',0,7],['R',0,8],['C',2,1],['C',2,7],['P',3,0],['P',3,2],['P',3,4],['P',3,6],['P',3,8],['r',9,0],['n',9,1],['b',9,2],['a',9,3],['k',9,4],['a',9,5],['b',9,6],['n',9,7],['r',9,8],['c',7,1],['c',7,7],['p',6,0],['p',6,2],['p',6,4],['p',6,6],['p',6,8]].forEach(([t,r,c])=>b[r][c]={t,id:`local-${t}-${r}-${c}`});return b};
+function boardUsable(b){return Array.isArray(b)&&b.length===10&&b.every(r=>Array.isArray(r)&&r.length===9)&&b.flat().some(p=>p?.t==='K')&&b.flat().some(p=>p?.t==='k');}
 const AVATARS=['🧑🏻','🧑🏼','🧑🏽','🧑🏾','🧑🏿','🐱','🐼','🦊','🐯','🐸','🤖','👾','🦄','🐲','😎','🥷'];
 function loadProfile(){const n=localStorage.getItem('xqName');avatar=localStorage.getItem('xqAvatar')||'🧑🏻';$('home-name').value=n||'玩家';$('avatar-preview').textContent=avatar;const p=$('avatar-picker');p.innerHTML=AVATARS.map(a=>`<button class="avatar-pick ${a===avatar?'selected':''}" data-a="${a}">${a}</button>`).join('');p.querySelectorAll('button').forEach(b=>b.onclick=()=>{avatar=b.dataset.a;localStorage.setItem('xqAvatar',avatar);$('avatar-preview').textContent=avatar;p.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b));});}
 function saveProfile(){localStorage.setItem('xqName',$('home-name').value.trim()||'玩家');localStorage.setItem('xqAvatar',avatar);}
 function connect(){if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return;ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);ws.onopen=()=>toast('已連線到遊戲伺服器');ws.onclose=()=>toast('連線已中斷，請重新整理。','error');ws.onerror=()=>toast('無法連線到遊戲伺服器。','error');ws.onmessage=e=>handle(JSON.parse(e.data));}
 function send(o){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(o));else toast('尚未連線','error');}
 function toast(text,kind=''){const t=$('toast');t.textContent=text;t.className='toast '+kind;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2200);}
-function showScreen(s){if(s!=='game-screen')hideRematchInvite();['home-screen','lobby-screen','game-screen'].forEach(id=>$(id).hidden=id!==s);window.scrollTo({top:0,behavior:'smooth'});}
+function showScreen(s){if(s!=='game-screen')hideRematchInvite();else if(state?.mode!=='online'||!state?.winner)hideRematchInvite(); else if(!state?.winner)hideRematchInvite();['home-screen','lobby-screen','game-screen'].forEach(id=>$(id).hidden=id!==s);window.scrollTo({top:0,behavior:'smooth'});}
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
 function handle(m){
  if(m.type==='error'){toast(m.message,'error');return;}
  if(m.type==='notice'){toast(m.message);return;}
  if(m.type==='proposal'){showProposal(m.kind,m.fromName);return;}
- if(m.type==='rematch-invite'){if(m.ended===true && m.roomId && state?.roomId===m.roomId && state?.mode==='online' && state?.winner){showRematchInvite(m.fromName);}return;}
- if(m.type==='room'){hideRematchInvite();mode=m.mode||'online';myColor=m.color||null;showScreen(mode==='ai'?'game-screen':'lobby-screen');updateLobby();if(mode==='ai')toast(`單人模式：${difficultyName($('difficulty')?.value||'normal')}`);return;}
+ if(m.type==='rematch-invite'){if(m.ended===true && m.roomId && state?.roomId===m.roomId && state?.mode==='online' && state?.winner){showRematchInvite(m.fromName);}else{hideRematchInvite();}return;}
+ if(m.type==='room'){hideRematchInvite();mode=m.mode||'online';myColor=m.color||null;if(m.pid)myPid=m.pid;showScreen(mode==='ai'?'game-screen':'lobby-screen');updateLobby();if(mode==='ai')toast(`單人模式：${difficultyName($('difficulty')?.value||'normal')}`);return;}
  if(m.type==='state'){
-  if(Array.isArray(m.board)&&m.board.length===10&&m.board.every(r=>Array.isArray(r)&&r.length===9)) lastBoard=m.board;
-  else if(lastBoard) m.board=lastBoard;
+  if(boardUsable(m.board)) lastBoard=m.board;
+  else if(lastBoard&&boardUsable(lastBoard)) m.board=lastBoard;
+  else if((m.mode==='ai'||m.rps?.phase==='done')&&!m.winner) m.board=INITIAL_BOARD();
   else {toast('棋盤資料尚未同步完成，正在重新整理…','error');return;}
-  state=m;myColor=m.color||myColor;if(!m.winner)hideRematchInvite();renderState();if(m.checkEvent)showCheck(m.checkEvent);
+  state=m;myColor=m.color||myColor;if(!myPid&&m.players?.length)myPid=m.players.find(p=>p.color===myColor)?.pid||m.players[0]?.pid;if(!m.winner)hideRematchInvite();renderState();if(m.checkEvent)showCheck(m.checkEvent);
  }
 }
 function updateLobby(){const ps=state?.players||[];const p1=ps[0],p2=ps[1];$('lobby-room').textContent=state?.roomId||'——';if(p1){$('lobby-p1-name').textContent=p1.name;$('lobby-p1-avatar').textContent=p1.avatar;$('lobby-p1-side').textContent=p1.color==='red'?'紅方':p1.color==='black'?'黑方':'尚未選色';}if(p2){$('lobby-p2-name').textContent=p2.name;$('lobby-p2-avatar').textContent=p2.avatar;$('lobby-p2-side').textContent=p2.color==='red'?'紅方':p2.color==='black'?'黑方':'尚未選色';}else{$('lobby-p2-name').textContent='等待加入';$('lobby-p2-avatar').textContent='?';$('lobby-p2-side').textContent='—';}
@@ -83,4 +86,4 @@ $('lobby-copy-share').onclick=()=>copyText(`來玩中國象棋 Online！房號�
 document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{send({action:'rps',choice:b.dataset.choice});playSound('select');});document.querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{send({action:'chooseColor',color:b.dataset.color});playSound('move');});
 $('undo-btn').onclick=()=>send({action:'proposal',kind:'undo'});$('draw-btn').onclick=()=>send({action:'proposal',kind:'draw'});$('rematch-btn').onclick=()=>{if(mode==='ai')send({action:'aiRematch'});else send({action:'inviteRematch'});};$('sound-btn').onclick=()=>{soundOn=!soundOn;$('sound-btn').textContent=`${soundOn?'🔊 音效：開':'🔇 音效：關'}`;if(soundOn)playSound('select');};
 $('confirm-yes').onclick=()=>{send({action:'proposalResponse',accept:true});hideProposal();};$('confirm-no').onclick=()=>{send({action:'proposalResponse',accept:false});hideProposal();};$('accept-rematch').onclick=()=>{send({action:'rematchResponse',accept:true});hideRematchInvite();};$('reject-rematch').onclick=()=>{send({action:'rematchResponse',accept:false});hideRematchInvite();};
-loadProfile();connect();
+hideRematchInvite();$('rps-panel').hidden=true;$('color-panel').hidden=true;$('confirm-overlay').hidden=true;hideRematchInvite();$('rps-panel').hidden=true;$('color-panel').hidden=true;$('confirm-overlay').hidden=true;loadProfile();connect();

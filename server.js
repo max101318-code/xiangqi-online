@@ -223,7 +223,7 @@ function handleProposalResponse(x,p,accept){
 const server=http.createServer((req,res)=>{
   let u=req.url.split('?')[0];if(u==='/')u='/index.html';
   const file=path.join(pub,u);if(!file.startsWith(pub)||!fs.existsSync(file)){res.writeHead(404);return res.end('404');}
-  const mime={'.html':'text/html;charset=utf-8','.js':'text/javascript;charset=utf-8','.css':'text/css;charset=utf-8'}[path.extname(file)]||'application/octet-stream';res.writeHead(200,{'Content-Type':mime});fs.createReadStream(file).pipe(res);
+  const mime={'.html':'text/html;charset=utf-8','.js':'text/javascript;charset=utf-8','.css':'text/css;charset=utf-8'}[path.extname(file)]||'application/octet-stream';res.writeHead(200,{'Content-Type':mime,'Cache-Control':'no-store, no-cache, must-revalidate, proxy-revalidate','Pragma':'no-cache','Expires':'0'});fs.createReadStream(file).pipe(res);
 });
 const wss=new WebSocketServer({server});
 wss.on('connection',ws=>{
@@ -233,10 +233,10 @@ wss.on('connection',ws=>{
     if(m.action==='create'){
       x={id:rid(),players:[],g:newGame(),ai:false,rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null};rooms.set(x.id,x);
       p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:null,connected:true};x.players.push(p);
-      send(p,{type:'room',roomId:x.id,color:null,mode:'online'});send(p,snapshot(x,p));broadcast(x);
+      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online'});send(p,snapshot(x,p));broadcast(x);
     } else if(m.action==='ai'){
       const difficulty=['easy','normal','hard'].includes(m.difficulty)?m.difficulty:'normal';x={id:rid(),players:[],g:newGame(),ai:true,difficulty,undoStack:[],checkEvent:null,proposal:null};rooms.set(x.id,x);x.g.turn='red';setTurnDeadline(x);
-      p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:'red',connected:true};x.players.push(p);send(p,{type:'room',roomId:null,color:'red',mode:'ai'});send(p,snapshot(x,p));
+      p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:'red',connected:true};x.players.push(p);send(p,{type:'room',roomId:null,pid:p.pid,color:'red',mode:'ai'});send(p,snapshot(x,p));
     } else if(m.action==='join'){
       x=rooms.get(String(m.roomId||'').trim().toUpperCase());
       if(!x||x.ai||x.players.length>=2)return send({ws}, {type:'error',message:'房間不存在、已滿，或這是人機房間'});
