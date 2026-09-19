@@ -6,3 +6,5 @@
 .save-primary{background:#c79342;color:#20170b;border-color:#e4b45f}.save-primary:disabled{opacity:.55;cursor:not-allowed;filter:none}
 
 .name-save-row{display:flex;gap:7px;align-items:center}.name-save-row .name-input{flex:1;min-width:160px}
+
+.match-btn{background:#c79342!important;color:#20170b!important;border-color:#e4b45f!important}.matchmaking-panel{align-items:center;justify-content:space-between;border-color:#5b7e92;background:#122a36}.matchmaking-panel h3{margin-bottom:4px}.matchmaking-panel p{margin:0;color:#f1d092;font-weight:800}.matchmaking-panel span{display:block;color:#8fa8b6;font-size:12px;margin-top:4px}.matchmaking-panel .ghost{border:1px solid #4d6575;background:#1d3340;color:#e3edf2;border-radius:9px;padding:9px 12px;cursor:pointer}.matchmaking-panel .ghost:disabled{opacity:.5}.matchmaking-hidden{display:none!important}

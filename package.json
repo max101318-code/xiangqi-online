@@ -1,6 +1,6 @@
 {
   "name": "xiangqi-online",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "private": true,
   "scripts": {
     "start": "node server.js"

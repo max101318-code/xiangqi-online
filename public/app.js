@@ -1,4 +1,4 @@
-let ws=null,state=null,myPid=null,myColor=null,mode='home',selected=null,lastCheckId=null,checkTimer=null,proposalVisible=false,avatar='🧑🏻',draftAvatar='🧑🏻',soundOn=true,clockTimer=null,lastBoard=null,countedRoundKey=null;
+let ws=null,state=null,myPid=null,myColor=null,mode='home',selected=null,lastCheckId=null,checkTimer=null,proposalVisible=false,avatar='🧑🏻',draftAvatar='🧑🏻',soundOn=true,clockTimer=null,lastBoard=null,countedRoundKey=null,currentScreen=null;
 const $=id=>document.getElementById(id);
 const CH={K:'帥',A:'仕',B:'相',N:'傌',R:'俥',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'炮',p:'卒'};
 const INITIAL_BOARD=()=>{const b=Array.from({length:10},()=>Array(9).fill(null));[['R',0,0],['N',0,1],['B',0,2],['A',0,3],['K',0,4],['A',0,5],['B',0,6],['N',0,7],['R',0,8],['C',2,1],['C',2,7],['P',3,0],['P',3,2],['P',3,4],['P',3,6],['P',3,8],['r',9,0],['n',9,1],['b',9,2],['a',9,3],['k',9,4],['a',9,5],['b',9,6],['n',9,7],['r',9,8],['c',7,1],['c',7,7],['p',6,0],['p',6,2],['p',6,4],['p',6,6],['p',6,8]].forEach(([t,r,c])=>b[r][c]={t,id:`local-${t}-${r}-${c}`});return b};
@@ -17,25 +17,54 @@ function updateProfileSaveState(){const nb=$('name-save-btn'),ab=$('avatar-save-
 function connect(){if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return;ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);ws.onopen=()=>toast('已連線到遊戲伺服器');ws.onclose=()=>toast('連線已中斷，請重新整理。','error');ws.onerror=()=>toast('無法連線到遊戲伺服器。','error');ws.onmessage=e=>handle(JSON.parse(e.data));}
 function send(o){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(o));else toast('尚未連線','error');}
 function toast(text,kind=''){const t=$('toast');t.textContent=text;t.className='toast '+kind;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2200);}
-function showScreen(s){if(s!=='game-screen')hideRematchInvite();else if(state?.mode!=='online'||!state?.winner)hideRematchInvite();['home-screen','lobby-screen','game-screen'].forEach(id=>$(id).hidden=id!==s);window.scrollTo({top:0,behavior:'smooth'});}
+function showScreen(s){const changed=currentScreen!==s;if(s!=='game-screen')hideRematchInvite();else if(state?.mode!=='online'||!state?.winner)hideRematchInvite();['home-screen','lobby-screen','game-screen'].forEach(id=>$(id).hidden=id!==s);currentScreen=s;if(changed)window.scrollTo({top:0,behavior:'smooth'});}
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
+function showMatchmaking(status){
+  mode='online';
+  if(status==='searching'){
+    $('lobby-room-wrap')?.classList.add('matchmaking-hidden');
+    $('matchmaking-panel').hidden=false;
+    $('rps-panel').hidden=true;$('color-panel').hidden=true;
+    $('lobby-message').textContent='正在尋找對手…配對到玩家後會自動進入猜拳。';
+    $('matchmaking-status').textContent='正在匹配中';
+    $('matchmaking-cancel').disabled=false;
+    showScreen('lobby-screen');
+  }else if(status==='cancelled'){
+    $('matchmaking-panel').hidden=true;
+    $('lobby-room-wrap')?.classList.remove('matchmaking-hidden');
+    state=null;myPid=null;myColor=null;selected=null;
+    showScreen('home-screen');loadProfile();toast('已取消匹配');
+  }
+}
+function startMatchmaking(){
+  if(($('home-name').value.trim()||'玩家').slice(0,12)!==profile.name)saveName();
+  if(draftAvatar!==profile.avatar)saveAvatar();
+  connect();
+  const go=()=>ws.readyState===WebSocket.OPEN?send({action:'matchmake',name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);
+  go();
+}
+function showMatchmakingCleanup(){
+  $('matchmaking-panel')?.setAttribute('hidden','');
+  $('lobby-room-wrap')?.classList.remove('matchmaking-hidden');
+}
 function handle(m){
  if(m.type==='error'){toast(m.message,'error');return;}
  if(m.type==='notice'){toast(m.message);return;}
  if(m.type==='proposal'){showProposal(m.kind,m.fromName);return;}
+ if(m.type==='matchmaking'){if(m.status==='searching'){showMatchmaking('searching');return;}if(m.status==='cancelled'){showMatchmaking('cancelled');return;}}
  if(m.type==='rematch-invite'){if(m.ended===true&&m.roomId&&state?.roomId===m.roomId&&state?.mode==='online'&&state?.winner){showRematchInvite(m.fromName)}else hideRematchInvite();return;}
  if(m.type==='room'){hideRematchInvite();mode=m.mode||'online';myColor=m.color||null;if(m.pid)myPid=m.pid;showScreen(mode==='ai'?'game-screen':'lobby-screen');if(mode==='ai')toast(`單人模式：${difficultyName(m.difficulty||'normal')}`);return;}
  if(m.type==='state'){
   if(boardUsable(m.board))lastBoard=m.board;else if(lastBoard&&boardUsable(lastBoard))m.board=lastBoard;else if((m.mode==='ai'||m.rps?.phase==='done')&&!m.winner)m.board=INITIAL_BOARD();else{toast('棋盤資料尚未同步完成，正在重新整理…','error');return;}
-  state=m;myColor=m.color||myColor;if(!myPid&&m.players?.length)myPid=m.players.find(p=>p.color===myColor)?.pid||m.players[0]?.pid;if(!m.winner)hideRematchInvite();updateStatsOnState(m);renderState();if(m.checkEvent)showCheck(m.checkEvent);
+  state=m;if(m.mode==='online'){showMatchmakingCleanup();}myColor=m.color||myColor;if(!myPid&&m.players?.length)myPid=m.players.find(p=>p.color===myColor)?.pid||m.players[0]?.pid;if(!m.winner)hideRematchInvite();updateStatsOnState(m);renderState();if(m.checkEvent)showCheck(m.checkEvent);
  }
 }
-function updateLobby(){const ps=state?.players||[],p1=ps[0],p2=ps[1];$('lobby-room').textContent=state?.roomId||'——';if(p1){$('lobby-p1-name').textContent=p1.name;paintAvatar($('lobby-p1-avatar'),p1.avatar);$('lobby-p1-side').textContent=p1.color==='red'?'紅方':p1.color==='black'?'黑方':'尚未選色';}if(p2){$('lobby-p2-name').textContent=p2.name;paintAvatar($('lobby-p2-avatar'),p2.avatar);$('lobby-p2-side').textContent=p2.color==='red'?'紅方':p2.color==='black'?'黑方':'尚未選色';}else{$('lobby-p2-name').textContent='等待加入';paintAvatar($('lobby-p2-avatar'),'?');$('lobby-p2-side').textContent='—';}
- const players=ps.length;$('lobby-message').textContent=players<2?'把房號分享給朋友即可加入。':state?.rps?.phase==='rps'?'兩位玩家已加入，請開始猜拳。':state?.rps?.phase==='choose-color'?(state.rps.isRpsWinner?'你猜拳獲勝，請選顏色。':'猜拳落敗，等待對方選色。'):'已決定先後手，進入棋局…';const list=[];list.push(`玩家：${players}/2`);if(state?.rps?.result)list.push(state.rps.result);$('lobby-state-list').innerHTML=list.map(x=>`<div class="hist">${x}</div>`).join('');
+function updateLobby(){const ps=state?.players||[],p1=ps[0],p2=ps[1];$('lobby-room').textContent=state?.roomId||'——';$('lobby-room-wrap')?.classList.toggle('matchmaking-hidden',state?.matchmade===true);if(p1){$('lobby-p1-name').textContent=p1.name;paintAvatar($('lobby-p1-avatar'),p1.avatar);$('lobby-p1-side').textContent=p1.color==='red'?'紅方':p1.color==='black'?'黑方':'尚未選色';}if(p2){$('lobby-p2-name').textContent=p2.name;paintAvatar($('lobby-p2-avatar'),p2.avatar);$('lobby-p2-side').textContent=p2.color==='red'?'紅方':p2.color==='black'?'黑方':'尚未選色';}else{$('lobby-p2-name').textContent='等待加入';paintAvatar($('lobby-p2-avatar'),'?');$('lobby-p2-side').textContent='—';}
+ const players=ps.length;if(state?.matchmade===true){showMatchmakingCleanup();$('lobby-message').textContent=players<2?'':'已匹配成功！兩位玩家已加入，請開始猜拳。';}else $('lobby-message').textContent=players<2?'把房號分享給朋友即可加入。':state?.rps?.phase==='rps'?'兩位玩家已加入，請開始猜拳。':state?.rps?.phase==='choose-color'?(state.rps.isRpsWinner?'你猜拳獲勝，請選顏色。':'猜拳落敗，等待對方選色。'):'已決定先後手，進入棋局…';const list=[];list.push(`玩家：${players}/2`);if(state?.rps?.result)list.push(state.rps.result);$('lobby-state-list').innerHTML=list.map(x=>`<div class="hist">${x}</div>`).join('');
  const rpsPhase=players===2&&state?.rps?.phase==='rps';$('rps-panel').hidden=!rpsPhase;if(rpsPhase){let t=state.rps.result||'請雙方各自出拳。';if(state.rps.youChoice)t='你已出拳，等待對方…';if(state.rps.hasOpponentChoice&&!state.rps.youChoice)t='對方已出拳，請你出拳。';$('rps-status').textContent=t;document.querySelectorAll('[data-choice]').forEach(b=>b.disabled=!!state.rps.youChoice)}
  const cp=players===2&&state?.rps?.phase==='choose-color';$('color-panel').hidden=!cp;if(cp){$('color-status').textContent=state.rps.isRpsWinner?'你是勝者，選紅方或黑方；你會先手。':'你是落敗者，等待對方選色；你會後手。';document.querySelectorAll('[data-color]').forEach(b=>b.disabled=!state.rps.isRpsWinner)}
 }
-function renderState(){if(!state||!Array.isArray(state.board)||state.board.length!==10)return;mode=state.mode||mode;if(mode==='online'&&state.rps?.phase!=='done'){showScreen('lobby-screen');updateLobby();return;}showScreen('game-screen');$('game-room-meta').textContent=mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:`房號 ${state.roomId||'—'}`;const me=state.players?.find(p=>p.pid===getMyPid(state));const opp=state.players?.find(p=>p.pid!==getMyPid(state));const my=me||{name:profile.name,avatar:profile.avatar||'🧑🏻', color:myColor},op=opp||{name:'電腦',avatar:'🤖',color:'black'};paintAvatar($('you-avatar'),my.avatar||profile.avatar||'🧑🏻');$('you-name').textContent=my.name;$('you-side').textContent=my.color==='red'?'紅方':my.color==='black'?'黑方':'待定';paintAvatar($('opp-avatar'),op.avatar);$('opp-name').textContent=op.name;$('opp-side').textContent=op.color==='red'?'紅方':op.color==='black'?'黑方':'待定';renderBoard();renderHistory();renderTurn();updateCountdown();updateActions();renderChat();}
+function renderState(){if(!state||!Array.isArray(state.board)||state.board.length!==10)return;mode=state.mode||mode;if(mode==='online'&&state.rps?.phase!=='done'){showScreen('lobby-screen');updateLobby();return;}showScreen('game-screen');$('game-room-meta').textContent=mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:(state.matchmade?'⚡ 快速匹配':'房號 '+(state.roomId||'—'));const me=state.players?.find(p=>p.pid===getMyPid(state));const opp=state.players?.find(p=>p.pid!==getMyPid(state));const my=me||{name:profile.name,avatar:profile.avatar||'🧑🏻', color:myColor},op=opp||{name:'電腦',avatar:'🤖',color:'black'};paintAvatar($('you-avatar'),my.avatar||profile.avatar||'🧑🏻');$('you-name').textContent=my.name;$('you-side').textContent=my.color==='red'?'紅方':my.color==='black'?'黑方':'待定';paintAvatar($('opp-avatar'),op.avatar);$('opp-name').textContent=op.name;$('opp-side').textContent=op.color==='red'?'紅方':op.color==='black'?'黑方':'待定';renderBoard();renderHistory();renderTurn();updateCountdown();updateActions();renderChat();}
 function getMyPid(st){return st.players?.find(p=>p.pid===myPid)?.pid||st.players?.find(p=>p.color===myColor)?.pid||st.players?.[0]?.pid;}
 function renderBoard(){const b=$('board-points');if(!b||!state||!Array.isArray(state.board)||state.board.length!==10||!state.board.every(r=>Array.isArray(r)&&r.length===9))return;b.innerHTML='';const hs=selected?hints(selected[0],selected[1]):[],hm=new Map(hs.map(x=>[`${x[0]},${x[1]}`,x[2]]));for(let r=0;r<10;r++)for(let c=0;c<9;c++){const el=document.createElement('button');el.type='button';el.className='point';el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;const p=state.board[r][c],key=`${r},${c}`;if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');if(hm.has(key))el.classList.add('hint',hm.get(key));if(p&&CH[p.t]){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp)}el.onclick=()=>clickCell(r,c);b.appendChild(el)}}
 function renderHistory(){$('history').innerHTML=(state.history||[]).map(x=>`<div class="hist"><b>${x.n}.</b> ${x.color==='red'?'紅':'黑'}${x.piece} <span>(${x.from[0]},${x.from[1]})→(${x.to[0]},${x.to[1]})</span>${x.captured?` <em>吃${x.captured}</em>`:''}</div>`).join('')||'<div class="hist">尚未有走棋紀錄</div>';$('move-count').textContent=`${state.history?.length||0} 手`;}
@@ -59,6 +88,8 @@ function hideProposal(){$('confirm-overlay').hidden=true;proposalVisible=false;}
 function showRematchInvite(name){$('rematch-title').textContent=`${name||'對方'}邀你進行下一場`;$('rematch-panel').hidden=false;}
 function hideRematchInvite(){$('rematch-panel').hidden=true;}
 function copyText(t){navigator.clipboard?.writeText(t).then(()=>toast('已複製')).catch(()=>toast('瀏覽器不允許自動複製，請手動複製房號','error'))}
+$('matchmaking-cancel').onclick=()=>send({action:'cancelMatchmake'});
+$('home-match').onclick=startMatchmaking;
 $('home-online').onclick=()=>{if(($('home-name').value.trim()||'玩家').slice(0,12)!==profile.name)saveName();if(draftAvatar!==profile.avatar)saveAvatar();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'create',name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
 $('home-join').onclick=()=>{const room=$('home-room').value.trim().toUpperCase();if(!room)return toast('請先輸入房號','error');if(($('home-name').value.trim()||'玩家').slice(0,12)!==profile.name)saveName();if(draftAvatar!==profile.avatar)saveAvatar();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'join',roomId:room,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
 $('home-ai').onclick=()=>{if(($('home-name').value.trim()||'玩家').slice(0,12)!==profile.name)saveName();if(draftAvatar!==profile.avatar)saveAvatar();const difficulty=$('home-difficulty').value;connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'ai',name:profile.name,avatar:profile.avatar,profileId:profile.id,difficulty}):setTimeout(go,40);go()};
