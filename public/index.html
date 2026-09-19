@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>中國象棋 Online</title><link rel="stylesheet" href="style.css?v=2.5.0?v=2.4.0">
+<title>中國象棋 Online</title><link rel="stylesheet" href="style.css?v=2.6.0">
 </head>
 <body>
 <div id="check-overlay" class="check-overlay" hidden aria-live="assertive"><div class="check-ink"><div class="check-word">將軍！</div><div id="check-target" class="check-target">黑將受到攻擊</div></div></div>
@@ -13,11 +13,11 @@
 <div id="home-screen" class="screen">
   <header class="site-header"><div><div class="eyebrow">CHINESE CHESS · ONLINE</div><h1>中國象棋 <span>Online</span></h1><p>即時對弈、單人 AI、房間連線，一個網址就能玩。</p></div><div class="status-pill">● ONLINE</div></header>
   <section class="hero-grid">
-    <div class="hero-card"><div class="hero-kicker">你的棋士名片</div><div class="profile-row"><div id="avatar-preview" class="avatar avatar-xl">🧑🏻</div><div><input id="home-name" class="name-input" maxlength="12" value="玩家"><div id="avatar-picker" class="avatar-picker"></div></div></div></div>
+    <div class="hero-card"><div class="hero-kicker">你的棋士名片</div><div class="profile-row"><div id="avatar-preview" class="avatar avatar-xl">🧑🏻</div><div><input id="home-name" class="name-input" maxlength="12" value="玩家"><div class="profile-tools"><button id="avatar-upload-btn" class="small-btn">＋ 自訂頭像</button><button id="avatar-reset-btn" class="small-btn ghost-mini">恢復預設</button><input id="avatar-file" type="file" accept="image/*" hidden></div><div id="avatar-picker" class="avatar-picker"></div><div class="save-note">名字與頭像會自動儲存在這台瀏覽器。</div></div></div></div>
     <div class="feature-card"><div class="hero-kicker">快速開始</div><div class="mode-grid">
       <div class="mode-card primary"><b>👥 雙人對戰</b><span>建立新房間或直接加入朋友的房間</span><div class="online-start"><button id="home-online">建立房間</button><input id="home-room" maxlength="6" placeholder="輸入房號"><button id="home-join">加入房間</button></div></div>
       <div class="mode-card"><b>🤖 單人對電腦</b><span>選擇 AI 難度後立即開始</span><div class="ai-start"><select id="home-difficulty"><option value="easy">簡單</option><option value="normal" selected>普通</option><option value="hard">困難</option></select><button id="home-ai">開始遊戲</button></div></div>
-    </div></div>
+    </div><div class="stats-card" aria-label="我的戰績"><div><span>勝場</span><b id="stat-wins">0</b></div><div><span>敗場</span><b id="stat-losses">0</b></div><div><span>勝率</span><b id="stat-rate">0%</b></div></div></div>
   </section>
   <section class="home-bottom"><div class="info-card"><b>房間大廳</b><span>雙人對局會先進入大廳，再猜拳決定先手、由勝者選紅黑。</span></div><div class="info-card"><b>對局功能</b><span>30 秒回合倒數、悔棋／求和請求、斷線判勝、再戰邀請。</span></div><div class="info-card"><b>棋盤體驗</b><span>可走提示、吃子音效、將軍墨字動畫與機械語音。</span></div></section>
 </div>
@@ -36,7 +36,7 @@
 <header class="screen-header game-header"><button id="game-home" class="ghost">← 首頁</button><div><div class="eyebrow">CHINESE CHESS · MATCH</div><h2>中國象棋 <span>Online</span></h2></div><div id="game-room-meta" class="top-meta"></div></header>
 <section class="game-toolbar"><div class="player-chip"><div id="you-avatar" class="avatar">🧑🏻</div><div><b id="you-name">玩家</b><span id="you-side">紅方</span></div></div><div class="turn-box"><div>回合倒數</div><b id="countdown">30</b><small>秒</small></div><div class="player-chip opponent"><div id="opp-avatar" class="avatar">🤖</div><div><b id="opp-name">電腦</b><span id="opp-side">黑方</span></div></div></section>
 <section class="game-layout"><div class="board-area"><div class="board-shell"><div id="board" aria-label="中國象棋棋盤"><svg class="board-lines" viewBox="0 0 8 9" preserveAspectRatio="none"><rect x="0" y="0" width="8" height="9" fill="none"/><path d="M0 0H8 M0 1H8 M0 2H8 M0 3H8 M0 4H8 M0 5H8 M0 6H8 M0 7H8 M0 8H8 M0 9H8 M0 0V9 M1 0V9 M2 0V9 M3 0V9 M4 0V9 M5 0V9 M6 0V9 M7 0V9 M8 0V9"/><path d="M3 0L5 2 M5 0L3 2 M3 7L5 9 M5 7L3 9"/><path d="M0 4.5H8" stroke-dasharray=".09 .09"/></svg><div class="river">楚河 <span>漢界</span></div><div id="board-points"></div></div></div><div id="turn-message" class="turn-message">等待開始…</div><div class="legend"><span><i class="dot move"></i>可走</span><span><i class="dot capture"></i>可吃</span><span>點棋子後再點目的地</span></div></div>
-<aside class="game-side"><div class="panel-card"><div class="panel-head"><h3>對局紀錄</h3><span id="move-count">0 手</span></div><div id="history" class="history"></div></div><div class="panel-card actions-card"><h3>對局控制</h3><div class="action-grid"><button id="undo-btn">↩ 悔棋</button><button id="draw-btn">🤝 求和</button><button id="rematch-btn">🔁 再戰</button><button id="sound-btn">🔊 音效：開</button></div></div><div id="game-notice" class="mini-notice">任何模式都會偵測將軍，顯示 1.5 秒毛筆字並播放機械音。</div></aside></section>
+<aside class="game-side"><div class="panel-card"><div class="panel-head"><h3>對局紀錄</h3><span id="move-count">0 手</span></div><div id="history" class="history"></div></div><div class="panel-card actions-card"><h3>對局控制</h3><div class="action-grid"><button id="undo-btn">↩ 悔棋</button><button id="draw-btn">🤝 求和</button><button id="rematch-btn">🔁 再戰</button><button id="sound-btn">🔊 音效：開</button></div></div><div class="panel-card chat-card"><div class="panel-head"><h3>💬 對局聊天室</h3><span id="chat-count">0</span></div><div id="chat-messages" class="chat-messages"><div class="chat-empty">進入雙人對局後可以和對手聊天。</div></div><div class="chat-compose"><input id="chat-input" maxlength="200" placeholder="輸入訊息…"><button id="chat-send">送出</button></div></div><div id="game-notice" class="mini-notice">任何模式都會偵測將軍，顯示 1.5 秒毛筆字並播放機械音。</div></aside></section>
 </div>
-<script src="app.js?v=2.5.0?v=2.4.0"></script>
+<script src="app.js?v=2.6.0"></script>
 </body></html>

@@ -18,6 +18,12 @@ const START = [
 ];
 const BEATS = {剪刀:'布',布:'石頭',石頭:'剪刀'};
 const AVATARS = ['🧑🏻','🧑🏼','🧑🏽','🧑🏾','🧑🏿','🐱','🐼','🦊','🐯','🐸','🤖','👾','🦄','🐲','😎','🥷'];
+function normalizeAvatar(value){
+  const v=String(value||'');
+  if(AVATARS.includes(v)) return v;
+  if(/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v) && v.length<=350000) return v;
+  return '🧑🏻';
+}
 
 const clone = v => JSON.parse(JSON.stringify(v));
 const rid = () => crypto.randomBytes(3).toString('hex').toUpperCase();
@@ -27,7 +33,7 @@ const eventId = () => `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 function newGame(){
   const b = Array.from({length:10},()=>Array(9).fill(null));
   for(const [t,r,c] of START) b[r][c] = {t,id:crypto.randomBytes(4).toString('hex')};
-  return {b,turn:null,winner:null,winnerPid:null,endedReason:null,history:[],move:1,turnDeadline:null};
+  return {b,turn:null,winner:null,winnerPid:null,endedReason:null,history:[],move:1,turnDeadline:null,roundKey:eventId()};
 }
 function newRps(){ return {phase:'rps',choices:{},result:null,winnerPid:null}; }
 function own(t,color){ return color==='red' ? /[A-Z]/.test(t) : /[a-z]/.test(t); }
@@ -154,7 +160,7 @@ function snapshot(x,p){
   return {
     type:'state',roomId:x.ai?null:x.id,color:p.color||null,turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,
     endedReason:x.g.endedReason||null,board:x.g.b,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,
-    players:playerList(x),mode:x.ai?'ai':'online',difficulty:x.difficulty||null,rps,
+    players:playerList(x),mode:x.ai?'ai':'online',difficulty:x.difficulty||null,rps,roundKey:x.g.roundKey,chat:x.chat||[],
     checkEvent:x.checkEvent||null,rematch:x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null,
     proposal:x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null,
     avatar:p.avatar
@@ -164,7 +170,7 @@ function send(p,o){if(p?.ws?.readyState===1)p.ws.send(JSON.stringify(o));}
 function broadcast(x){x.players.forEach(p=>send(p,snapshot(x,p)));}
 function setTurnDeadline(x){x.g.turnDeadline=x.g.turn?Date.now()+TURN_SECONDS*1000:null;}
 function resetOnlineRound(x){
-  x.g=newGame();x.players.forEach(p=>p.color=null);x.rps=newRps();x.rematchInvite=null;x.proposal=null;x.checkEvent=null;
+  x.g=newGame();x.players.forEach(p=>p.color=null);x.rps=newRps();x.rematchInvite=null;x.proposal=null;x.checkEvent=null;x.chat=[];
 }
 function resolveRps(x){
   if(!x.rps||x.rps.phase!=='rps'||x.players.length<2)return;
@@ -268,16 +274,16 @@ wss.on('connection',ws=>{
   ws.on('message',raw=>{
     let m;try{m=JSON.parse(raw);}catch{return;}
     if(m.action==='create'){
-      x={id:rid(),players:[],g:newGame(),ai:false,rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null};rooms.set(x.id,x);
-      p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:null,connected:true};x.players.push(p);
+      x={id:rid(),players:[],g:newGame(),ai:false,rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[]};rooms.set(x.id,x);
+      p={ws,pid:pid(),profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
       send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online'});send(p,snapshot(x,p));broadcast(x);
     } else if(m.action==='ai'){
-      const difficulty=['easy','normal','hard'].includes(m.difficulty)?m.difficulty:'normal';x={id:rid(),players:[],g:newGame(),ai:true,difficulty,undoStack:[],checkEvent:null,proposal:null};rooms.set(x.id,x);x.g.turn='red';setTurnDeadline(x);
+      const difficulty=['easy','normal','hard'].includes(m.difficulty)?m.difficulty:'normal';x={id:rid(),players:[],g:newGame(),ai:true,difficulty,undoStack:[],checkEvent:null,proposal:null,chat:[]};rooms.set(x.id,x);x.g.turn='red';setTurnDeadline(x);
       p={ws,pid:pid(),name:String(m.name||'玩家1').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:'red',connected:true};x.players.push(p);send(p,{type:'room',roomId:null,pid:p.pid,color:'red',mode:'ai'});send(p,snapshot(x,p));
     } else if(m.action==='join'){
       x=rooms.get(String(m.roomId||'').trim().toUpperCase());
       if(!x||x.ai||x.players.length>=2)return send({ws}, {type:'error',message:'房間不存在、已滿，或這是人機房間'});
-      p={ws,pid:pid(),name:String(m.name||'玩家2').slice(0,12),avatar:AVATARS.includes(m.avatar)?m.avatar:'🧑🏻',color:null,connected:true};x.players.push(p);broadcast(x);
+      p={ws,pid:pid(),profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);broadcast(x);
     } else if(!x||!p)return;
     else if(m.action==='rps'&&!x.ai){
       if(x.players.length<2)return send(p,{type:'error',message:'請等待另一位玩家加入'});
@@ -286,6 +292,15 @@ wss.on('connection',ws=>{
       if(x.rps.choices[p.pid])return send(p,{type:'error',message:'你本輪已經出拳，請等待結果'});
       x.rps.choices[p.pid]=m.choice;if(x.players.every(q=>x.rps.choices[q.pid]))resolveRps(x);else broadcast(x);
     } else if(m.action==='chooseColor'&&!x.ai){const e=chooseColor(x,p,m.color);if(e)send(p,{type:'error',message:e});else broadcast(x);
+    } else if(m.action==='chat'){
+      if(x.ai) return send(p,{type:'error',message:'單人模式沒有聊天室'});
+      if(x.rps?.phase!=='done'||!x.g.turn) return send(p,{type:'error',message:'進入對局後才能聊天'});
+      const text=String(m.text||'').trim().slice(0,200);
+      if(!text) return;
+      x.chat=x.chat||[];
+      x.chat.push({pid:p.pid,name:p.name,avatar:p.avatar,text,ts:Date.now()});
+      if(x.chat.length>100)x.chat=x.chat.slice(-100);
+      broadcast(x);
     } else if(m.action==='move'){
       const res=applyMove(x,p,m);if(res.error)send(p,{type:'error',message:res.error});else{
         const checkId=x.checkEvent?.id;
