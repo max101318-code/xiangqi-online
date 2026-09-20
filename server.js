@@ -7,6 +7,8 @@ const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
 const TURN_SECONDS = 30;
+const GO_SIZE = 19;
+const GOMOKU_SIZE = 15;
 const rooms = new Map();
 const matchmakingQueue = [];
 const pub = path.join(__dirname, 'public');
@@ -41,10 +43,11 @@ const eventId = () => `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 
 function baseGame(mode){
   if(mode==='gomoku'){
-    return {mode,size:15,board:Array.from({length:15},()=>Array(15).fill(null)),turn:null,winner:null,winnerPid:null,endedReason:null,history:[],move:1,turnDeadline:null,roundKey:eventId()};
+    return {mode,size:GOMOKU_SIZE,board:Array.from({length:GOMOKU_SIZE},()=>Array(GOMOKU_SIZE).fill(null)),turn:null,winner:null,winnerPid:null,endedReason:null,history:[],move:1,turnDeadline:null,roundKey:eventId()};
   }
   if(mode==='go'){
-    return {mode,size:9,board:Array.from({length:9},()=>Array(9).fill(null)),turn:null,winner:null,winnerPid:null,endedReason:null,history:[],move:1,turnDeadline:null,roundKey:eventId(),captures:{black:0,white:0},passStreak:0,ko:null};
+    const board=Array.from({length:GO_SIZE},()=>Array(GO_SIZE).fill(null));
+    return {mode,size:GO_SIZE,board,turn:null,winner:null,winnerPid:null,endedReason:null,history:[],move:1,turnDeadline:null,roundKey:eventId(),captures:{black:0,white:0},passStreak:0,koPoint:null,phase:'play',positions:[serializeGo(board)],deadGroups:[],scoreConfirm:{}};
   }
   const b=Array.from({length:10},()=>Array(9).fill(null));
   for(const [t,r,c] of START)b[r][c]={t,id:crypto.randomBytes(4).toString('hex')};
@@ -140,13 +143,13 @@ function applyXQ(x,p,m){
 
 function gomokuWinner(b,r,c,color){
   const dirs=[[1,0],[0,1],[1,1],[1,-1]];
-  for(const [dr,dc] of dirs){let n=1;for(const s of [1,-1]){let rr=r+dr*s,cc=c+dc*s;while(rr>=0&&rr<15&&cc>=0&&cc<15&&b[rr][cc]===color){n++;rr+=dr*s;cc+=dc*s;}}if(n>=5)return true;}
+  for(const [dr,dc] of dirs){let n=1;for(const s of [1,-1]){let rr=r+dr*s,cc=c+dc*s;while(rr>=0&&rr<GOMOKU_SIZE&&cc>=0&&cc<GOMOKU_SIZE&&b[rr][cc]===color){n++;rr+=dr*s;cc+=dc*s;}}if(n>=5)return true;}
   return false;
 }
 function applyGomoku(x,p,m){
   const g=x.g;if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.color)return{error:'還沒輪到你'};
   if(g.turnDeadline&&Date.now()>g.turnDeadline){timeOut(x);return{error:'回合時間已到'};}
-  const r=+m.r,c=+m.c;if(r<0||r>=15||c<0||c>=15)return{error:'位置超出棋盤'};if(g.board[r][c])return{error:'這裡已有棋子'};
+  const r=+m.r,c=+m.c;if(r<0||r>=GOMOKU_SIZE||c<0||c>=GOMOKU_SIZE)return{error:'位置超出棋盤'};if(g.board[r][c])return{error:'這裡已有棋子'};
   const before={board:clone(g.board),history:clone(g.history),turn:g.turn,move:g.move};
   g.board[r][c]=p.color;g.history.push({n:g.move,color:p.color,move:[r+1,c+1]});x.undoStack.push(before);g.move++;
   if(gomokuWinner(g.board,r,c,p.color)){g.winner=p.color;g.winnerPid=p.pid;g.endedReason=`${p.color==='black'?'黑方':'白方'}五連，獲勝！`;g.turnDeadline=null;}
@@ -154,49 +157,95 @@ function applyGomoku(x,p,m){
   else{g.turn=p.color==='black'?'white':'black';setTurnDeadline(x);}
   return{ok:true};
 }
+
+function goNeighbors(r,c){
+  const out=[];
+  for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<GO_SIZE&&nc>=0&&nc<GO_SIZE)out.push([nr,nc]);}
+  return out;
+}
 function groupAndLiberties(board,r,c){
-  const color=board[r][c];if(!color)return{stones:[],liberties:new Set()};
+  const color=board[r]?.[c];if(!color)return{stones:[],liberties:new Set()};
   const stones=[],seen=new Set(),liberties=new Set(),q=[[r,c]];
   while(q.length){const [rr,cc]=q.pop(),key=`${rr},${cc}`;if(seen.has(key))continue;seen.add(key);stones.push([rr,cc]);
-    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const nr=rr+dr,nc=cc+dc;if(nr<0||nr>=9||nc<0||nc>=9)continue;const v=board[nr][nc];if(v===null)liberties.add(`${nr},${nc}`);else if(v===color)q.push([nr,nc]);}
-  } return{stones,liberties};
+    for(const [nr,nc] of goNeighbors(rr,cc)){const v=board[nr][nc];if(v===null)liberties.add(`${nr},${nc}`);else if(v===color)q.push([nr,nc]);}
+  }
+  return{stones,liberties};
 }
-function serializeGo(board){return board.map(r=>r.map(v=>v||'.').join('')).join('/');}
+function serializeGo(board){return board.map(row=>row.map(v=>v||'.').join('')).join('/');}
+function cloneGoState(g){return {board:clone(g.board),history:clone(g.history),turn:g.turn,move:g.move,captures:clone(g.captures),passStreak:g.passStreak,koPoint:g.koPoint,phase:g.phase,positions:clone(g.positions),deadGroups:clone(g.deadGroups),scoreConfirm:clone(g.scoreConfirm)};}
+function restoreGoState(g,snap){g.board=clone(snap.board);g.history=clone(snap.history);g.turn=snap.turn;g.move=snap.move;g.captures=clone(snap.captures);g.passStreak=snap.passStreak;g.koPoint=snap.koPoint;g.phase=snap.phase||'play';g.positions=clone(snap.positions||[serializeGo(g.board)]);g.deadGroups=clone(snap.deadGroups||[]);g.scoreConfirm=clone(snap.scoreConfirm||{});g.winner=null;g.winnerPid=null;g.endedReason=null;}
+function oppositeGo(c){return c==='black'?'white':'black';}
+function simulateGoPlacement(g,color,r,c){
+  if(r<0||r>=GO_SIZE||c<0||c>=GO_SIZE)return{error:'位置超出棋盤'};
+  if(g.board[r][c])return{error:'這裡已有棋子'};
+  const b=clone(g.board);b[r][c]=color;let captured=0,capturedStones=[];
+  const checked=new Set();
+  for(const [nr,nc] of goNeighbors(r,c)){
+    if(b[nr][nc]!==oppositeGo(color))continue;
+    const k=`${nr},${nc}`;if(checked.has(k))continue;
+    const gr=groupAndLiberties(b,nr,nc);for(const st of gr.stones)checked.add(`${st[0]},${st[1]}`);
+    if(gr.liberties.size===0){captured+=gr.stones.length;capturedStones.push(...gr.stones);for(const [sr,sc] of gr.stones)b[sr][sc]=null;}
+  }
+  const ownGroup=groupAndLiberties(b,r,c);
+  if(ownGroup.liberties.size===0&&captured===0)return{error:'自殺禁著點：落子後自己的棋組沒有氣，且沒有提子'};
+  const sig=serializeGo(b);
+  if((g.positions||[]).includes(sig))return{error:'全盤同形禁重複（Superko）：這一步會重複歷史盤面'};
+  return{board:b,captured,capturedStones,sig};
+}
 function applyGoMove(x,p,r,c){
-  const g=x.g;if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.color)return{error:'還沒輪到你'};
+  const g=x.g;if(g.phase!=='play')return{error:'目前正在終局結算'};if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.color)return{error:'還沒輪到你'};
   if(g.turnDeadline&&Date.now()>g.turnDeadline){timeOut(x);return{error:'回合時間已到'};}
-  if(r<0||r>=9||c<0||c>=9)return{error:'位置超出棋盤'};if(g.board[r][c])return{error:'這裡已有棋子'};
-  const b=clone(g.board);b[r][c]=p.color;let captured=0;
-  for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const nr=r+dr,nc=c+dc;if(nr<0||nr>=9||nc<0||nc>=9||b[nr][nc]!==oppositeGo(p.color))continue;const gr=groupAndLiberties(b,nr,nc);if(gr.liberties.size===0){captured+=gr.stones.length;for(const [sr,sc] of gr.stones)b[sr][sc]=null;}}
-  const ownGroup=groupAndLiberties(b,r,c);if(ownGroup.liberties.size===0)return{error:'自殺禁手：這一步沒有氣'};
-  const sig=serializeGo(b);if(g.ko&&g.ko===sig)return{error:'打劫：這一步會立即重複上一局面，不能下'};
-  x.undoStack.push({board:clone(g.board),history:clone(g.history),turn:g.turn,captures:clone(g.captures),passStreak:g.passStreak,ko:g.ko});
-  g.board=b;g.captures[p.color]+=captured;g.passStreak=0;g.ko=null;
-  // Simple ko: only a single-stone capture that returns the board to the position before.
-  if(captured===1){g.ko=serializeGo(g.board);}
-  g.history.push({n:g.move,color:p.color,move:[r+1,c+1],captured});g.move++;
+  const result=simulateGoPlacement(g,p.color,r,c);if(result.error)return{error:result.error};
+  x.undoStack.push({mode:'go',state:cloneGoState(g)});
+  g.board=result.board;g.captures[p.color]+=result.captured;g.passStreak=0;g.koPoint=null;g.positions.push(result.sig);
+  g.history.push({n:g.move,color:p.color,move:[r+1,c+1],captured:result.captured});g.move++;
   g.turn=oppositeGo(p.color);setTurnDeadline(x);return{ok:true};
 }
-function oppositeGo(c){return c==='black'?'white':'black';}
 function passGo(x,p){
-  const g=x.g;if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.color)return{error:'還沒輪到你'};
-  g.history.push({n:g.move,color:p.color,pass:true});x.undoStack.push({board:clone(g.board),history:clone(g.history),turn:g.turn,captures:clone(g.captures),passStreak:g.passStreak,ko:g.ko});g.move++;g.passStreak++;
-  if(g.passStreak>=2){const sc=scoreGo(g);g.winner=sc.black>sc.white?'black':sc.white>sc.black?'white':'draw';g.winnerPid=g.winner==='draw'?null:x.players.find(q=>q.color===g.winner)?.pid||null;g.endedReason=`雙方停一手，${sc.black}：${sc.white}，${g.winner==='draw'?'和棋':`${g.winner==='black'?'黑方':'白方'}獲勝！`}`;g.turnDeadline=null;}
+  const g=x.g;if(g.phase!=='play')return{error:'目前正在終局結算'};if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.color)return{error:'還沒輪到你'};
+  x.undoStack.push({mode:'go',state:cloneGoState(g)});
+  g.history.push({n:g.move,color:p.color,pass:true});g.move++;g.passStreak++;
+  if(g.passStreak>=2){g.phase='scoring';g.turn=null;g.turnDeadline=null;g.scoreConfirm={};g.deadGroups=[];}
   else{g.turn=oppositeGo(p.color);setTurnDeadline(x);}
   return{ok:true};
 }
+function deadGroupKey(stones){return stones.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(s=>`${s[0]},${s[1]}`).join(';');}
+function toggleGoDead(x,p,r,c){
+  const g=x.g;if(g.phase!=='scoring')return{error:'目前不是圍棋終局結算階段'};if(r<0||r>=GO_SIZE||c<0||c>=GO_SIZE)return{error:'位置超出棋盤'};if(!g.board[r][c])return{error:'這裡沒有棋子'};
+  const gr=groupAndLiberties(g.board,r,c),key=deadGroupKey(gr.stones),idx=g.deadGroups.findIndex(k=>k===key);
+  if(idx>=0)g.deadGroups.splice(idx,1);else g.deadGroups.push(key);
+  g.scoreConfirm={};return{ok:true};
+}
+function boardForGoScore(g){
+  const b=clone(g.board),dead=[];
+  for(const key of g.deadGroups||[]){for(const item of key.split(';')){const [r,c]=item.split(',').map(Number);if(b[r]?.[c]){dead.push([r,c,b[r][c]]);b[r][c]=null;}}}
+  return{board:b,dead};
+}
 function scoreGo(g){
-  let black=0,white=0,seen=new Set();
-  for(let r=0;r<9;r++)for(let c=0;c<9;c++){
-    if(g.board[r][c]==='black'){black++;continue} if(g.board[r][c]==='white'){white++;continue}
-    const key=`${r},${c}`;if(seen.has(key))continue;
-    const q=[[r,c]],region=[],touch=new Set();seen.add(key);
-    while(q.length){const [rr,cc]=q.pop();region.push([rr,cc]);for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const nr=rr+dr,nc=cc+dc;if(nr<0||nr>=9||nc<0||nc>=9)continue;const v=g.board[nr][nc];if(v===null){const k=`${nr},${nc}`;if(!seen.has(k)){seen.add(k);q.push([nr,nc]);}}else touch.add(v);}}
+  const {board,dead}=boardForGoScore(g);let black=0,white=0,seen=new Set();
+  for(let r=0;r<GO_SIZE;r++)for(let c=0;c<GO_SIZE;c++){
+    if(board[r][c]==='black'){black++;continue} if(board[r][c]==='white'){white++;continue}
+    const key=`${r},${c}`;if(seen.has(key))continue;const q=[[r,c]],region=[],touch=new Set();seen.add(key);
+    while(q.length){const [rr,cc]=q.pop();region.push([rr,cc]);for(const [nr,nc] of goNeighbors(rr,cc)){const v=board[nr][nc];if(v===null){const k=`${nr},${nc}`;if(!seen.has(k)){seen.add(k);q.push([nr,nc]);}}else touch.add(v);}}
     if(touch.size===1){if(touch.has('black'))black+=region.length;else white+=region.length;}
   }
-  return {black:black+g.captures.black,white:white+g.captures.white+3.5};
+  // The supplied specification recommends Chinese area scoring and specifies 3.75 komi for Black.
+  black+=3.75;
+  return{black,white,blackStones:black-3.75,whiteStones:white,dead};
 }
-
+function finalizeGoScore(x){
+  const sc=scoreGo(x.g);x.g.score=sc;
+  x.g.winner=sc.black>sc.white?'black':sc.white>sc.black?'white':'draw';
+  x.g.winnerPid=x.g.winner==='draw'?null:x.ai?(x.g.winner===x.players[0].color?x.players[0].pid:'ai'):x.players.find(q=>q.color===x.g.winner)?.pid||null;
+  x.g.endedReason=`圍棋終局：黑 ${sc.black.toFixed(2)} 分，白 ${sc.white.toFixed(2)} 分；${x.g.winner==='draw'?'和棋':`${x.g.winner==='black'?'黑方':'白方'}獲勝！`}`;
+  x.g.phase='ended';x.g.turn=null;x.g.turnDeadline=null;
+}
+function confirmGoScore(x,p){
+  const g=x.g;if(g.phase!=='scoring')return{error:'目前不是終局結算階段'};g.scoreConfirm[p.pid]=true;
+  if(x.ai){finalizeGoScore(x);return{ok:true};}
+  if(x.players.length===2&&x.players.every(q=>g.scoreConfirm[q.pid]))finalizeGoScore(x);
+  return{ok:true};
+}
 function createRoom(mode,matchmade=false,ai=false){
   const x={id:rid(),mode:normalizeMode(mode),ai,players:[],g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade};
   rooms.set(x.id,x);return x;
@@ -206,7 +255,7 @@ function send(p,o){if(p?.ws?.readyState===1)p.ws.send(JSON.stringify(o));}
 function setTurnDeadline(x){x.g.turnDeadline=x.g.turn?Date.now()+TURN_SECONDS*1000:null;}
 function publicSnapshot(x,p){
   const rps=x.rps?{phase:x.rps.phase,result:x.rps.result||null,winnerPid:x.rps.winnerPid||null,isRpsWinner:x.rps.winnerPid===p.pid,youChoice:x.rps.choices?.[p.pid]||null,hasOpponentChoice:x.players.some(q=>q.pid!==p.pid&&x.rps.choices?.[q.pid])}:null;
-  return {type:'state',roomId:x.ai||x.matchmade?null:x.id,matchmade:!!x.matchmade,mode:x.ai?'ai':'online',gameMode:x.mode,difficulty:x.difficulty||null,color:p.color||null,turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,board:x.g.b||x.g.board,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),rps,roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null,proposal:x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null,avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0};
+  return {type:'state',roomId:x.ai||x.matchmade?null:x.id,matchmade:!!x.matchmade,mode:x.ai?'ai':'online',gameMode:x.mode,difficulty:x.difficulty||null,color:p.color||null,turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,board:x.g.b||x.g.board,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),rps,roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null,proposal:x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null,avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null};
 }
 function broadcast(x){x.players.forEach(p=>send(p,publicSnapshot(x,p)));}
 function broadcastMatchmakingWaiting(item){send(item.p,{type:'matchmaking',status:'searching',mode:item.mode});}
@@ -244,26 +293,58 @@ function applyOnlineMove(x,p,m){
   if(x.mode==='gomoku')return applyGomoku(x,p,m);
   return applyGoMove(x,p,+m.r,+m.c);
 }
+
+function lineRunScore(board,r,c,color){
+  const dirs=[[1,0],[0,1],[1,1],[1,-1]];let total=0;
+  for(const [dr,dc] of dirs){let len=1,open=0;for(const sign of [1,-1]){let rr=r+dr*sign,cc=c+dc*sign;while(rr>=0&&rr<GOMOKU_SIZE&&cc>=0&&cc<GOMOKU_SIZE&&board[rr][cc]===color){len++;rr+=dr*sign;cc+=dc*sign;}if(rr>=0&&rr<GOMOKU_SIZE&&cc>=0&&cc<GOMOKU_SIZE&&!board[rr][cc])open++;}if(len>=5)total+=100000;else total+=len*len*25+open*8;}return total;
+}
 function aiGomokuMove(g,level,color){
-  const opp=oppositeGo(color), empties=[];for(let r=0;r<15;r++)for(let c=0;c<15;c++)if(!g.board[r][c])empties.push([r,c]);
+  const opp=oppositeGo(color),empties=[];for(let r=0;r<GOMOKU_SIZE;r++)for(let c=0;c<GOMOKU_SIZE;c++)if(!g.board[r][c])empties.push([r,c]);
   if(!empties.length)return null;
+  if(!g.history.length&&g.board[Math.floor(GOMOKU_SIZE/2)][Math.floor(GOMOKU_SIZE/2)]===null)return[Math.floor(GOMOKU_SIZE/2),Math.floor(GOMOKU_SIZE/2)];
   if(level==='easy')return empties[Math.floor(Math.random()*empties.length)];
-  function lineScore(r,c,who){const dirs=[[1,0],[0,1],[1,1],[1,-1]];let best=0;for(const [dr,dc] of dirs){let n=1,open=0;for(const s of [1,-1]){let rr=r+dr*s,cc=c+dc*s;while(rr>=0&&rr<15&&cc>=0&&cc<15&&g.board[rr][cc]===who){n++;rr+=dr*s;cc+=dc*s}if(rr>=0&&rr<15&&cc>=0&&cc<15&&!g.board[rr][cc])open++;}best=Math.max(best,n*n*20+open*10)}return best;}
-  let best=empties[0],bestScore=-1;for(const [r,c] of empties){const sc=lineScore(r,c,color)+lineScore(r,c,opp)*.92+(r>=5&&r<=9&&c>=5&&c<=9?8:0)+(Math.random()*(level==='hard'?0.2:10));if(sc>bestScore){bestScore=sc;best=[r,c]}}return best;
+  // Win now, then block opponent's immediate win.
+  for(const [r,c] of empties){g.board[r][c]=color;const w=gomokuWinner(g.board,r,c,color);g.board[r][c]=null;if(w)return[r,c];}
+  for(const [r,c] of empties){g.board[r][c]=opp;const w=gomokuWinner(g.board,r,c,opp);g.board[r][c]=null;if(w)return[r,c];}
+  let best=empties[0],bestScore=-Infinity;
+  for(const [r,c] of empties){g.board[r][c]=color;const attack=lineRunScore(g.board,r,c,color);g.board[r][c]=null;g.board[r][c]=opp;const defend=lineRunScore(g.board,r,c,opp);g.board[r][c]=null;const center=10-Math.abs(r-7)-Math.abs(c-7);const noise=level==='hard'?Math.random():Math.random()*8;const score=attack+defend*.92+center*3+noise;if(score>bestScore){bestScore=score;best=[r,c];}}
+  return best;
 }
+function legalGoMoves(x,color){
+  const g=x.g, out=[];for(let r=0;r<GO_SIZE;r++)for(let c=0;c<GO_SIZE;c++){const sim=simulateGoPlacement(g,color,r,c);if(!sim.error)out.push({r,c,captured:sim.captured,board:sim.board});}return out;
+}
+function goLocalHeuristic(g,move,color){
+  const opp=oppositeGo(color);let score=move.captured*250;
+  const b=move.board,grp=groupAndLiberties(b,move.r,move.c);score+=grp.liberties.size*9;
+  if(levelThreatened(b,move.r,move.c,opp))score+=120;
+  for(const [nr,nc] of goNeighbors(move.r,move.c)){if(g.board[nr][nc]===color)score+=12;if(g.board[nr][nc]===opp)score+=7;}
+  const center=9-Math.hypot(move.r-9,move.c-9)/2;score+=center;
+  return score;
+}
+function levelThreatened(board,r,c,color){const g=groupAndLiberties(board,r,c);return g.liberties.size<=1;}
 function aiGoMove(x,level){
-  const g=x.g,color='white',empties=[];for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(!g.board[r][c])empties.push([r,c]);
-  const legal=[];for(const [r,c] of empties){const b=clone(g.board);b[r][c]=color;let captured=0;for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const nr=r+dr,nc=c+dc;if(nr<0||nr>=9||nc<0||nc>=9||b[nr][nc]!==oppositeGo(color))continue;const gr=groupAndLiberties(b,nr,nc);if(!gr.liberties.size){captured+=gr.stones.length;for(const [sr,sc] of gr.stones)b[sr][sc]=null;}}const own=groupAndLiberties(b,r,c);if(own.liberties.size)legal.push({r,c,captured});}
-  if(!legal.length)return null;if(level==='easy')return legal[Math.floor(Math.random()*legal.length)];
-  legal.sort((a,b)=>(b.captured-a.captured)+(Math.random()-0.5)*(level==='hard'?0.5:8));return legal[0];
+  const color='white',legal=legalGoMoves(x,color);if(!legal.length)return null;
+  if(level==='easy')return legal[Math.floor(Math.random()*legal.length)];
+  // Tactical priorities: capture, save own group, pressure adjacent groups, center.
+  let ranked=legal.map(m=>({...m,score:goLocalHeuristic(x.g,m,color)+Math.random()*(level==='hard'?0.4:8)})).sort((a,b)=>b.score-a.score);
+  if(level==='normal')return ranked[0];
+  // Hard: shallow 1-ply opponent reply approximation over the best candidates.
+  const candidates=ranked.slice(0,Math.min(18,ranked.length));let best=candidates[0],bestScore=-Infinity;
+  for(const m of candidates){let score=m.score;const ng={...x.g,board:m.board};const replies=[];for(let r=Math.max(0,m.r-2);r<=Math.min(GO_SIZE-1,m.r+2);r++)for(let c=Math.max(0,m.c-2);c<=Math.min(GO_SIZE-1,m.c+2);c++){if(ng.board[r][c])continue;const sim=simulateGoPlacement(ng,'black',r,c);if(!sim.error)replies.push({...sim,r,c});}
+    if(replies.length){let oppBest=0;for(const rep of replies.slice(0,20)){oppBest=Math.max(oppBest,rep.captured*250+groupAndLiberties(rep.board,rep.r,rep.c).liberties.size*6);}score-=oppBest*.32;}
+    if(score>bestScore){bestScore=score;best=m;}
+  }
+  return best;
 }
+function aiColor(x){return x.mode==='xiangqi'?'black':'white';}
 function aiTurn(x){
-  if(!x.ai||x.g.winner||x.g.turn!==x.players[0].color)return;
-  const fake={pid:'ai',color:x.mode==='xiangqi'?'black': 'white'};
-  let move=null;
-  if(x.mode==='xiangqi'){const moves=[];const p={color:'black'};for(let r=0;r<10;r++)for(let c=0;c<9;c++)if(x.g.b[r][c]&&own(x.g.b[r][c].t,'black'))for(let rr=0;rr<10;rr++)for(let cc=0;cc<9;cc++)if(!legalXQ(x.g,p,r,c,rr,cc))moves.push({r1:r,c1:c,r2:rr,c2:cc});if(!moves.length){x.g.winner=fake.color==='black'?'red':'black';x.g.winnerPid=x.players[0].pid;x.g.endedReason='電腦無合法走法，你獲勝！';x.g.turnDeadline=null;broadcast(x);return;}move=moves[Math.floor(Math.random()*moves.length)];}
-  else if(x.mode==='gomoku'){const color='white';move=aiGomokuMove(x.g,x.difficulty,color);if(move)move={r:move[0],c:move[1]};}
-  else {const mv=aiGoMove(x,x.difficulty);if(!mv){move=null;}else move={r:mv.r,c:mv.c};}
+  const ac=aiColor(x);if(!x.ai||x.g.winner||x.g.turn!==ac)return;
+  const fake={pid:'ai',color:ac};let move=null;
+  if(x.mode==='xiangqi'){
+    const moves=[];const p={color:'black'};for(let r=0;r<10;r++)for(let c=0;c<9;c++)if(x.g.b[r][c]&&own(x.g.b[r][c].t,'black'))for(let rr=0;rr<10;rr++)for(let cc=0;cc<9;cc++)if(!legalXQ(x.g,p,r,c,rr,cc))moves.push({r1:r,c1:c,r2:rr,c2:cc});
+    if(!moves.length){x.g.winner='red';x.g.winnerPid=x.players[0].pid;x.g.endedReason='電腦無合法走法，你獲勝！';x.g.turnDeadline=null;broadcast(x);return;}move=moves[Math.floor(Math.random()*moves.length)];
+  } else if(x.mode==='gomoku'){const a=aiGomokuMove(x.g,x.difficulty,ac);if(a)move={r:a[0],c:a[1]};}
+  else {const mv=aiGoMove(x,x.difficulty);if(mv)move={r:mv.r,c:mv.c};}
   if(x.mode==='go'&&move===null){passGo(x,fake);broadcast(x);return;}
   const res=applyOnlineMove(x,fake,move);if(res.ok){const checkId=x.checkEvent?.id;broadcast(x);if(checkId)setTimeout(()=>{if(x.checkEvent?.id===checkId){x.checkEvent=null;broadcast(x);}},1500);}
 }
@@ -277,7 +358,7 @@ function handleProposalResponse(x,p,accept){
   else if(q.kind==='undo'){
     if(!accept){if(from)send(from,{type:'notice',message:`${p.name} 拒絕悔棋請求。`});broadcast(x);return null;}
     if(!x.undoStack.length)return'沒有可以悔回的步驟';const prev=x.undoStack.pop();
-    if(x.mode==='xiangqi'){x.g=clone(prev);}else{x.g.board=clone(prev.board);x.g.history=clone(prev.history);x.g.turn=prev.turn;x.g.captures=prev.captures?clone(prev.captures):x.g.captures;x.g.passStreak=prev.passStreak||0;x.g.ko=prev.ko||null;x.g.move=prev.move||Math.max(1,x.g.history.length+1);x.g.winner=null;x.g.winnerPid=null;x.g.endedReason=null;}
+    if(x.mode==='xiangqi'){x.g=clone(prev);}else if(x.mode==='go'){restoreGoState(x.g,prev);}else{x.g.board=clone(prev.board);x.g.history=clone(prev.history);x.g.turn=prev.turn;x.g.move=prev.move||Math.max(1,x.g.history.length+1);x.g.winner=null;x.g.winnerPid=null;x.g.endedReason=null;}
     x.checkEvent=null;x.g.winner=null;x.g.winnerPid=null;x.g.endedReason=null;setTurnDeadline(x);broadcast(x);
   }
 }
@@ -330,12 +411,19 @@ wss.on('connection',ws=>{
       const checkId=x.checkEvent?.id;broadcast(x);if(checkId)setTimeout(()=>{if(x.checkEvent?.id===checkId){x.checkEvent=null;broadcast(x);}},1500);
       if(x.ai&&!x.g.winner)setTimeout(()=>aiTurn(x),450);
     }else if(m.action==='pass'&&x.mode==='go'){
-      const res=passGo(x,p);if(res.error)return send(p,{type:'error',message:res.error});broadcast(x);if(x.ai&&!x.g.winner)setTimeout(()=>aiTurn(x),450);
+      const res=passGo(x,p);if(res.error)return send(p,{type:'error',message:res.error});broadcast(x);
+      if(x.ai&&!x.g.winner&&x.g.phase==='play')setTimeout(()=>aiTurn(x),450);
+    }else if(m.action==='goToggleDead'&&x.mode==='go'){
+      const res=toggleGoDead(x,p,+m.r,+m.c);if(res.error)return send(p,{type:'error',message:res.error});broadcast(x);
+    }else if(m.action==='goConfirmScore'&&x.mode==='go'){
+      const res=confirmGoScore(x,p);if(res.error)return send(p,{type:'error',message:res.error});broadcast(x);
+    }else if(m.action==='resign'){
+      if(x.g.winner)return send(p,{type:'error',message:'對局已結束'});const opp=x.mode==='xiangqi'?(p.color==='red'?'black':'red'):(p.color==='black'?'white':'black');x.g.winner=opp;x.g.winnerPid=x.ai&&opp===x.players[0].color?x.players[0].pid:(!x.ai?x.players.find(q=>q.color===opp)?.pid||null:null);x.g.endedReason=`${p.name} 投降，${opp==='red'?'紅方':opp==='black'?'黑方':'白方'}獲勝！`;x.g.turn=null;x.g.turnDeadline=null;x.g.phase=x.mode==='go'?'ended':x.g.phase;broadcast(x);
     }else if(m.action==='proposal'){
       if(x.ai&&m.kind==='undo'){
         if(x.g.winner)return send(p,{type:'error',message:'對局已結束，不能悔棋'});if(!x.undoStack.length)return send(p,{type:'error',message:'目前沒有可以悔回的步驟'});
         const steps=Math.min(2,x.undoStack.length);let restored=null;for(let i=0;i<steps;i++)restored=x.undoStack.pop();
-        if(x.mode==='xiangqi')x.g=clone(restored);else{x.g.board=clone(restored.board);x.g.history=clone(restored.history);x.g.turn=restored.turn;x.g.captures=restored.captures?clone(restored.captures):x.g.captures;x.g.passStreak=restored.passStreak||0;x.g.ko=restored.ko||null;x.g.move=restored.move||Math.max(1,x.g.history.length+1);x.g.winner=null;x.g.winnerPid=null;x.g.endedReason=null;}
+        if(x.mode==='xiangqi')x.g=clone(restored);else if(x.mode==='go')restoreGoState(x.g,restored);else{x.g.board=clone(restored.board);x.g.history=clone(restored.history);x.g.turn=restored.turn;x.g.move=restored.move||Math.max(1,x.g.history.length+1);x.g.winner=null;x.g.winnerPid=null;x.g.endedReason=null;}
         x.checkEvent=null;setTurnDeadline(x);broadcast(x);
       }else if(x.ai&&m.kind==='draw'){
         if(x.g.winner)return send(p,{type:'error',message:'對局已結束'});x.g.winner='draw';x.g.endedReason='你選擇求和，本局以和棋結束。';x.g.turnDeadline=null;broadcast(x);
@@ -355,4 +443,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`${GAME_NAMES.xiangqi} Online v2.8 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v2.9 multi-game on ${PORT}`));

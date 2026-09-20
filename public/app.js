@@ -168,7 +168,9 @@ function renderState(){
   paintAvatar($('you-avatar'),my.avatar||profile.avatar);$('you-name').textContent=my.name||profile.name;$('you-side').textContent=sideName(my.color,g);
   paintAvatar($('opp-avatar'),opp?.avatar||'❔');$('opp-name').textContent=opp?.name||'等待對手';$('opp-side').textContent=sideName(opp?.color,g);
   renderBoard();renderHistory();renderTurn();updateCountdown();updateActions();renderChat();
-  $('game-notice').textContent=g==='xiangqi'?'將軍會顯示 1.5 秒毛筆字並播放機械音。':g==='gomoku'?'15×15 五連取勝；三種 AI 難度可選。':'9×9 圍棋：提子、禁自殺、簡單打劫與停手終局。';
+  $('game-notice').textContent=g==='xiangqi'?'將軍會顯示 1.5 秒毛筆字並播放機械音。':g==='gomoku'?'15×15 五連取勝；三種 AI 難度可選。':'19×19 圍棋：19路、氣、提子、自殺禁著、全盤同形禁重複、兩次停手進入終局結算。';
+
+  if(g==='go'&&state.score){$('game-notice').textContent=`終局：黑 ${Number(state.score.black).toFixed(2)} · 白 ${Number(state.score.white).toFixed(2)}；點選標記死棋並雙方確認。`;}
 }
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
 function currentBoardCell(r,c){return state?.board?.[r]?.[c]??null;}
@@ -183,8 +185,18 @@ function renderXiangqiBoard(board){
   for(let r=0;r<10;r++)for(let c=0;c<9;c++){const el=document.createElement('button');el.type='button';el.className='point';el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;const p=currentBoardCell(r,c),key=`${r},${c}`;if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');if(hm.has(key))el.classList.add('hint',hm.get(key));if(p&&CH[p.t]){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp)}el.onclick=()=>clickCell(r,c);points.appendChild(el);}
 }
 function renderGridBoard(board,g){
-  const n=state.size|| (g==='gomoku'?15:9);board.innerHTML='';board.classList.add('grid-game-board',`board-${g}`);board.style.setProperty('--n',n);
-  for(let r=0;r<n;r++)for(let c=0;c<n;c++){const el=document.createElement('button');el.type='button';el.className='grid-point';el.style.gridRow=r+1;el.style.gridColumn=c+1;const p=currentBoardCell(r,c);if(p){el.classList.add(p==='black'?'stone-black':'stone-white');el.textContent='';}else if(g==='go'){el.classList.add('empty-go');}el.onclick=()=>clickCell(r,c);board.appendChild(el);}
+  const n=Number(state.size)||(g==='gomoku'?15:19);board.innerHTML='';board.className='grid-game-board board-'+g;board.style.setProperty('--n',n);
+  const starSet=new Set();
+  if(g==='go'){for(const r of [3,9,15])for(const c of [3,9,15])starSet.add(`${r},${c}`);}
+  else if(g==='gomoku'){for(const r of [3,7,11])for(const c of [3,7,11])starSet.add(`${r},${c}`);}
+  for(let r=0;r<n;r++)for(let c=0;c<n;c++){
+    const el=document.createElement('button');el.type='button';el.className='grid-point';el.style.gridRow=r+1;el.style.gridColumn=c+1;
+    if(starSet.has(`${r},${c}`))el.classList.add('star');
+    const p=currentBoardCell(r,c);
+    if(p){el.classList.add(p==='black'?'stone-black':'stone-white');}
+    if(g==='go' && state.goPhase==='scoring' && state.deadGroups?.some(key=>key.split(';').includes(`${r},${c}`))){el.classList.add('dead-marked');}
+    el.onclick=()=>clickCell(r,c);board.appendChild(el);
+  }
 }
 function renderHistory(){
   const hist=state.history||[];$('move-count').textContent=`${hist.length} 手`;
@@ -195,6 +207,7 @@ function renderHistory(){
 }
 function renderTurn(){
   if(state.winner){$('turn-message').textContent=state.endedReason||`結果：${state.winner==='draw'?'和棋':sideName(state.winner,state.gameMode)}`;return}
+  if(state.gameMode==='go'&&state.goPhase==='scoring'){$('turn-message').textContent='終局結算：點擊你認為的死棋標記，再按「確認結算」。';return}
   $('turn-message').textContent=state.turn===myColor?'輪到你：請走棋':state.turn?`等待${sideName(state.turn,state.gameMode)}走棋`:'等待開始…';
 }
 function updateCountdown(){
@@ -203,15 +216,16 @@ function updateCountdown(){
   tick();clockTimer=setInterval(tick,250);
 }
 function updateActions(){
-  const myTurn=state?.turn===myColor&&!state?.winner;
+  const myTurn=state?.turn===myColor&&!state?.winner&&state?.goPhase!=='scoring';
   $('undo-btn').disabled=!myTurn||!(state.history?.length);
   $('draw-btn').disabled=!myTurn;
   $('pass-btn').hidden=state?.gameMode!=='go';
-  $('pass-btn').disabled=!myTurn||!!state?.winner;
+  if(state?.gameMode==='go'&&state?.goPhase==='scoring'){$('pass-btn').hidden=false;$('pass-btn').disabled=!!state.scoreConfirm?.[myPid];$('pass-btn').textContent=state.scoreConfirm?.[myPid]?'✅ 已確認':'✅ 確認結算';}
+  else{$('pass-btn').textContent='⏸ 停一手';$('pass-btn').disabled=!myTurn||!!state?.winner;}
   $('rematch-btn').disabled=!state?.winner;
   $('rematch-btn').textContent=state?.mode==='ai'?(state?.winner?'🔁 再來一局':'🔁 再戰'):'🔁 再戰';
   $('sound-btn').textContent=`${soundOn?'🔊 音效：開':'🔇 音效：關'}`;
-  const chatDisabled=state?.mode!=='online'||state?.rps?.phase!=='done'||!state?.turn||!!state?.winner;
+  const chatDisabled=state?.mode!=='online'||state?.rps?.phase!=='done'||(!state?.turn&&state?.goPhase!=='scoring')||!!state?.winner;
   $('chat-input').disabled=chatDisabled;$('chat-send').disabled=chatDisabled;
 }
 function renderChat(){
@@ -254,6 +268,10 @@ function clickCell(r,c){
     if(currentBoardCell(r,c))return;send({action:'move',r,c});playSound('move');return;
   }
   if(g==='go'){
+    if(state.goPhase==='scoring'){
+      if(currentBoardCell(r,c)){send({action:'goToggleDead',r,c});playSound('select');}
+      return;
+    }
     if(currentBoardCell(r,c))return;send({action:'move',r,c});playSound('move');
   }
 }
@@ -280,7 +298,8 @@ $('lobby-copy-share').onclick=()=>copyText(`來玩${modeName(state?.gameMode||se
 document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{send({action:'rps',choice:b.dataset.choice});playSound('select')});
 $('undo-btn').onclick=()=>send({action:'proposal',kind:'undo'});
 $('draw-btn').onclick=()=>send({action:'proposal',kind:'draw'});
-$('pass-btn').onclick=()=>send({action:'pass'});
+$('pass-btn').onclick=()=>{if(state?.gameMode==='go'&&state?.goPhase==='scoring')send({action:'goConfirmScore'});else send({action:'pass'});};
+$('resign-btn').onclick=()=>{if(state?.winner)return;if(confirm('確定要投降嗎？投降後本局立即判負。'))send({action:'resign'});};
 $('rematch-btn').onclick=()=>{if(state?.mode==='ai')send({action:'aiRematch'});else send({action:'inviteRematch'})};
 $('sound-btn').onclick=()=>{soundOn=!soundOn;$('sound-btn').textContent=`${soundOn?'🔊 音效：開':'🔇 音效：關'}`;if(soundOn)playSound('select')};
 $('confirm-yes').onclick=()=>{send({action:'proposalResponse',accept:true});$('confirm-overlay').hidden=true};$('confirm-no').onclick=()=>{send({action:'proposalResponse',accept:false});$('confirm-overlay').hidden=true};
