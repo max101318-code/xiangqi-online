@@ -364,37 +364,34 @@ function applyCheckers(x,p,m){
   const from=String(m.from||''),to=String(m.to||''),color=p.color;
   if(g.board[from]!==color)return{error:'只能移動自己的棋子'};if(g.board[to])return{error:'目標位置已有棋子'};if(!CHECKER_HOLE_SET.has(from)||!CHECKER_HOLE_SET.has(to))return{error:'無效棋孔'};
   const chain=g.chain&&g.chain.pid===p.pid;
-  if(chain && from!==g.chain.pos)return{error:'連跳中必須使用同一顆棋子'};
+  if(chain&&from!==g.chain.pos)return{error:'連跳中必須使用同一顆棋子'};
   let kind=checkerCanStep(x,p.pid,from,to)?'step':checkerCanJump(x,from,to)?'jump':null;
   if(chain&&kind!=='jump')kind=null;
   if(!kind)return{error:chain?'連跳只能再跳躍，或按「停止連跳」':'只能單步或等距跳躍'};
 
-  const before=clone(g);
-  g.board[to]=g.board[from];delete g.board[from];
-  g.history.push({n:g.move,color,from,to,kind});g.move++;x.undoStack.push(before);
+  // 同一回合連跳不得沿剛才的同一直線直接折返回上一個落點。
+  // 例如 1→2 可以繼續 2→3 或轉彎，但不能 2→1。
+  if(chain&&kind==='jump'&&g.chain.from===to)return{error:'同一回合不可沿原路折返回上一格'};
 
-  if(checkerWon(x,p)){
-    g.winner=p.color;g.winnerPid=p.pid;
-    g.endedReason=`${p.name} 已將全部棋子移入目標大本營，獲勝！`;
-    g.turn=null;g.turnDeadline=null;g.chain=null;
-    return{ok:true};
+  const before=clone(g);g.board[to]=g.board[from];delete g.board[from];g.history.push({n:g.move,color,from,to,kind});g.move++;x.undoStack.push(before);
+  if(checkerWon(x,p)){g.winner=p.color;g.winnerPid=p.pid;g.endedReason=`${p.name} 已將全部棋子移入目標大本營，獲勝！`;g.turn=null;g.turnDeadline=null;g.chain=null;return{ok:true};}
+
+  if(kind==='jump'){
+    g.chain={pid:p.pid,pos:to,from,to};
+    // 下一跳不能直接回到這一跳的上一個落點；若沒有其他合法跳，這一回合直接結束。
+    if(checkerHasAnyJump(x,to,from)){
+      g.turn=p.pid;
+      // 同一回合沿用既有倒數，不重設 30 秒。
+      return{ok:true};
+    }
   }
 
-  // 跳棋：同一顆棋如果還有合法跳躍，留在同一回合繼續連跳。
-  // 每一次連跳都沿用同一個 30 秒回合倒數，不重置計時器。
-  if(kind==='jump' && checkerHasAnyJump(x,to)){
-    g.chain={pid:p.pid,pos:to};
-    g.turn=p.pid;
-    return{ok:true};
-  }
-
-  // 沒有下一個合法跳躍（或本手是普通走一步）才交棒給下一位。
   g.chain=null;
   g.turn=nextCheckerPid(x,p.pid);
   setTurnDeadline(x);
   return{ok:true};
 }
-function checkerHasAnyJump(x,from){for(const to of checkerJumpTargets(from))if(checkerCanJump(x,from,to))return true;return false;}
+function checkerHasAnyJump(x,from,forbiddenTo=null){for(const to of checkerJumpTargets(from)){if(forbiddenTo&&to===forbiddenTo)continue;if(checkerCanJump(x,from,to))return true;}return false;}
 function stopCheckerChain(x,p){if(!x.g.chain||x.g.chain.pid!==p.pid)return{error:'目前沒有你的連跳回合'};x.g.chain=null;x.g.turn=nextCheckerPid(x,p.pid);setTurnDeadline(x);return{ok:true};}
 
 function baseGame(mode){
@@ -1072,75 +1069,49 @@ function checkerGoalDistance(x,id,color){
   return map&&Number.isFinite(map[id])?map[id]:Infinity;
 }
 function aiCheckersMove(x){
-  const p={pid:'ai',name:'電腦',color:'red'},g=x.g;
-  const moves=[],last=x.aiLastMove||null;
+  const g=x.g;
+  const p={pid:'ai',name:'電腦',color:x.aiColor||'red'};
+  if(!p.color)return null;
+  const moves=[];
   const chainPos=g.chain?.pid==='ai'?g.chain.pos:null;
-  const reverseMap=x.aiReverseMap||{};
+  const forbiddenBack=g.chain?.pid==='ai'?g.chain.from:null;
 
-  const isImmediateReverse=(m)=>!!(last&&last.from===m.to&&last.to===m.from);
-  const reverseKey=(m)=>`${m.from}>${m.to}`;
   const addMovesForPiece=(id,allowStep)=>{
     if(g.board[id]!==p.color)return;
     if(allowStep){
       for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to)){
-        const rev=isImmediateReverse({from:id,to});
-        const used=Number(reverseMap[reverseKey({from:to,to:id})]||0);
-        if(rev && used>=2)continue;
         const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
         const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
-        let score=progress*34-1+Math.random()*3;
-        if(rev)score-=180;
+        let score=progress*30-2+Math.random()*2;
         moves.push({from:id,to,kind:'step',score});
       }
     }
-    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to)){
-      const rev=isImmediateReverse({from:id,to});
-      const used=Number(reverseMap[reverseKey({from:to,to:id})]||0);
-      if(rev && used>=2)continue;
+    for(const to of checkerJumpTargets(id)){
+      if(chainPos&&to===forbiddenBack)continue;
+      if(!checkerCanJump(x,id,to))continue;
       const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
       const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
-      let score=84+progress*38+Math.random()*3;
+      let score=85+progress*36+Math.random()*2;
       if(d1===0)score+=220;
-      if(rev)score-=300;
-      if(chainPos && checkerHasAnyJump(x,to))score+=150;
+      // 連跳中更偏好能形成下一跳的落點，但不允許立即折返。
+      if(chainPos&&checkerHasAnyJump(x,to,id))score+=140;
       moves.push({from:id,to,kind:'jump',score});
     }
   };
 
   if(chainPos){
-    // 連跳中只能用同一顆棋，而且只能跳。
+    // AI 連跳時只能使用目前這顆棋，且不能直接跳回上一個落點。
     addMovesForPiece(chainPos,false);
   }else{
     for(const [id,occ] of Object.entries(g.board))if(occ===p.color)addMovesForPiece(id,true);
   }
 
-  // 如果反向限制把候選全部濾掉，優先讓 AI 換另一顆棋；
-  // 若整盤真的只剩立即折返可動，也允許它做一次合法折返，避免假性「無合法走法」。
-  if(!moves.length && !chainPos){
-    for(const [id,occ] of Object.entries(g.board))if(occ===p.color){
-      for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to))moves.push({from:id,to,kind:'step',score:-50+Math.random()*2});
-      for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to))moves.push({from:id,to,kind:'jump',score:20+Math.random()*2});
-    }
-  }
   if(!moves.length)return null;
-
   moves.sort((a,b)=>b.score-a.score);
   let pick=moves[0];
   if(x.difficulty==='easy')pick=moves[Math.floor(Math.random()*Math.min(6,moves.length))];
   else if(x.difficulty==='normal')pick=moves[Math.floor(Math.random()*Math.min(3,moves.length))];
-
   const res=applyCheckers(x,p,{from:pick.from,to:pick.to});
-  if(res?.ok){
-    x.aiReverseMap=x.aiReverseMap||{};
-    const rev=isImmediateReverse(pick);
-    if(rev){
-      const k=reverseKey(pick);x.aiReverseMap[k]=(x.aiReverseMap[k]||0)+1;
-    }else{
-      // 只有立即折返鏈才累積；換其他棋子／方向就清掉舊折返壓力。
-      x.aiReverseMap={};
-    }
-    x.aiLastMove={from:pick.from,to:pick.to,kind:pick.kind};
-  }
   return res;
 }
 

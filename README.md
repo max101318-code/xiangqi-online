@@ -74,3 +74,10 @@ Fixed revealed Banqi/暗棋 cannon pieces rendering blank by using the centraliz
 - Banqi hidden pieces are treated as unknown to the AI; AI decision scoring never inspects hidden color/type.
 - Human-facing Banqi hidden cells are masked in network snapshots; Dark Banqi can still attempt a reveal/capture.
 - Chinese Checkers AI avoids repeated immediate reversals up to two times, falls back to any legal step/jump, and never declares a stalemate loss merely because no move is available.
+
+
+## v3.4.13 跳棋連跳方向修正
+- 同一回合連跳不可直接沿剛才的跳躍原路折返，例如 1→2 後不可 2→1。
+- 1→2→3 合法，連跳轉彎也合法。
+- 若沒有其他合法下一跳，該回合自動結束，不會把「禁止折返」錯判成困斃。
+- AI 連跳同樣套用此限制；沒有其他跳躍時可正常交回回合。
