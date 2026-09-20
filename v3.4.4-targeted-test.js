@@ -1,0 +1,11 @@
+const fs=require('fs');
+const server=fs.readFileSync('server.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+const css=fs.readFileSync('public/style.css','utf8');
+const image=fs.statSync('public/checkers-board-reference.png');
+if(!server.includes("setTimeout(()=>aiExtraRpsChoose(x),650)")) throw new Error('AI RPS retry missing');
+if(!server.includes("x.aiTurnRetries=(x.aiTurnRetries||0)+1")) throw new Error('AI retry guard missing');
+if(!app.includes("/checkers-board-reference.png")) throw new Error('checker image element missing');
+if(!css.includes('.checker-reference-image')) throw new Error('checker image css missing');
+if(image.size<100000) throw new Error('reference image unexpectedly small');
+console.log('V3_4_4_TARGETED_OK');

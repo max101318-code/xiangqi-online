@@ -301,6 +301,7 @@ function banqiChar(p){if(!p)return '';const names={king:p.color==='red'?'帥':'�
 function checkerNeighborIds(id){const [q,r]=id.split(',').map(Number);return [[1,-1],[1,0],[0,1],[-1,1],[-1,0],[0,-1]].map(([dq,dr])=>`${q+dq},${r+dr}`);}
 function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
+  const art=document.createElement('img');art.className='checker-reference-image';art.src='/checkers-board-reference.png';art.alt='跳棋棋盤';art.draggable=false;board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){
     const el=document.createElement('button');el.type='button';el.className='checker-hole';
