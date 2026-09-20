@@ -23,12 +23,19 @@
 - 原有中國象棋車、炮、馬等軌跡不修改。
 
 
-## v3.4.2 fix
+## v3.4.3 fix
 Fixed revealed Banqi/暗棋 cannon pieces rendering blank by using the centralized piece-label mapping, including 炮. Added defensive fallback.
 
 
-### v3.4.2
+### v3.4.3
 - 明棋／暗棋空白格可移動，暗棋連吃同階可繼續。
 - 炮吃子必須隔恰好一枚棋子沿直線飛吃，可吃任何敵棋。
 - 暗棋炮同樣支援飛吃；連吃遇己方棋可停止，遇較大暗棋則翻開並中斷。
 - 跳棋直接使用使用者提供的完整 700×686 棋盤參考圖，121 個棋孔以透明互動區覆蓋。
+
+
+## v3.4.3 修正
+- 修正明棋／暗棋 AI 房間開局棋盤初始化與首翻陣營同步。
+- 修正 AI 猜拳平手後會重新出拳。
+- 修正 AI 跳棋取得猜拳先選權時會正確完成選色並開始走棋。
+- 跳棋參考圖直接嵌入 CSS，部署時不依賴額外圖片網址。

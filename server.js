@@ -80,6 +80,11 @@ function banqiCanEat(att,def){
   return BANQI_RANK[att.type]>=BANQI_RANK[def.type];
 }
 function banqiOppColor(c){return c==='red'?'black':'red';}
+function banqiNextPid(x,pid){
+  const ps=[...x.players.filter(p=>p.connected!==false),...(x.ai?[{pid:'ai',color:x.aiColor||null,connected:true}]:[])];
+  const i=ps.findIndex(q=>q.pid===pid);
+  return i<0?ps[0]?.pid:ps[(i+1)%ps.length]?.pid;
+}
 function banqiPlayerByPid(x,id){ if(id==='ai') return {pid:'ai',name:'電腦',color:x.aiColor}; return x.players.find(p=>p.pid===id)||null; }
 function banqiRemaining(x,color){let n=0;for(const row of x.g.board)for(const p of row)if(p&&p.color===color)n++;return n;}
 function banqiEndsIfWon(x,p){
@@ -118,7 +123,22 @@ function applyBanqi(x,p,m){
   if(m.action==='flip'){
     if(!cell)return{error:'這裡沒有棋子'};if(cell.revealed)return{error:'這顆棋已經翻開'};
     cell.revealed=true;
-    if(!p.color){p.color=cell.color;x.aiColor=x.ai?banqiOppColor(p.color):null;const other=x.players.find(q=>q.pid!==p.pid);if(other)other.color=banqiOppColor(p.color);}
+    if(!p.color){
+      if(p.pid==='ai'){
+        p.color=cell.color;
+        x.aiColor=cell.color;
+        const other=x.players.find(q=>q.pid!==p.pid);
+        if(other) other.color=banqiOppColor(cell.color);
+      }else{
+        p.color=cell.color;
+        if(x.ai){
+          x.aiColor=banqiOppColor(cell.color);
+        }else{
+          const other=x.players.find(q=>q.pid!==p.pid);
+          if(other) other.color=banqiOppColor(cell.color);
+        }
+      }
+    }
     g.history.push({n:g.move,color:p.color||cell.color,move:'翻棋',at:[r+1,c+1],piece:banqiLabel(cell)});g.move++;
     g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
   }
@@ -353,14 +373,31 @@ function aiChooseCheckerColor(x){
   if(!x.ai||x.rps?.phase!=='choose-color'||x.rps.colorTurnPid!=='ai')return;
   const choices=Object.keys(x.rps.colorChoices||{});
   const color=CHECKER_COLORS.find(c=>!choices.includes(c))||'red';
-  const aiP={pid:'ai',name:'電腦',color:x.aiColor};
-  x.rps.colorChoices[color]='ai';x.checkerColorByPid=x.checkerColorByPid||{};x.checkerColorByPid.ai=color;x.aiColor=color;
+  x.rps.colorChoices[color]='ai';
+  x.checkerColorByPid=x.checkerColorByPid||{};
+  x.checkerColorByPid.ai=color;
+  x.aiColor=color;
   x.rps.colorTurnIndex=(x.rps.colorTurnIndex||0)+1;
   const idx=x.rps.colorTurnIndex;
-  x.rps.result=`電腦選擇${checkerColorLabel(color)}；輪到${idx<x.rps.rankOrder.length?'下一位玩家選色。':'開始對局。'}`;
-  if(idx<x.rps.rankOrder.length){x.rps.colorTurnPid=x.rps.rankOrder[idx];}
-  if(idx>=x.rps.rankOrder.length){x.checkerColorOrder=x.rps.rankOrder.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);checkerInit(x);x.g.turn=x.rps.rankOrder[0];x.g.started=true;setTurnDeadline(x);}
+  const rank=x.rps.rankOrder||[];
+
+  if(idx<rank.length){
+    x.rps.colorTurnPid=rank[idx];
+    x.rps.result=`電腦選擇${checkerColorLabel(color)}；輪到${nameByPid(x,rank[idx])}選擇下一個顏色。`;
+    broadcast(x);
+    return;
+  }
+
+  const order=rank.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);
+  x.checkerColorOrder=order;
+  checkerInit(x);
+  x.g.turn=rank[0];
+  x.g.started=true;
+  setTurnDeadline(x);
+  x.rps.result=`選色完成：${rank.map((pid,i)=>`第${i+1}名 ${nameByPid(x,pid)}－${checkerColorLabel(order[i])}`).join('、')}`;
+  x.rps.colorTurnPid=null;
   broadcast(x);
+  if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
 }
 function chooseCheckerColor(x,p,color){
   if(x.rps.phase!=='choose-color')return'目前不是選色階段';
@@ -378,11 +415,15 @@ function chooseCheckerColor(x,p,color){
     const order=rank.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);
     x.checkerColorOrder=order;checkerInit(x);x.g.turn=rank[0];x.g.started=true;setTurnDeadline(x);
     x.rps.result=`選色完成：${rank.map((pid,i)=>`第${i+1}名 ${nameByPid(x,pid)}－${checkerColorLabel(order[i])}`).join('、')}。第三名使用剩餘顏色。`;
-    x.rps.colorTurnPid=null;return null;
+    x.rps.colorTurnPid=null;
+    if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
+    return null;
   }
   if(idx>=rank.length){
     const order=rank.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);
-    x.checkerColorOrder=order;checkerInit(x);x.g.turn=rank[0];x.g.started=true;setTurnDeadline(x);x.rps.result=`選色完成：${rank.map((pid,i)=>`第${i+1}名 ${nameByPid(x,pid)}－${checkerColorLabel(order[i])}`).join('、')}`;x.rps.colorTurnPid=null;return null;
+    x.checkerColorOrder=order;checkerInit(x);x.g.turn=rank[0];x.g.started=true;setTurnDeadline(x);x.rps.result=`選色完成：${rank.map((pid,i)=>`第${i+1}名 ${nameByPid(x,pid)}－${checkerColorLabel(order[i])}`).join('、')}`;x.rps.colorTurnPid=null;
+    if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
+    return null;
   }
   x.rps.colorTurnPid=rank[idx];x.rps.result=`${p.name} 選擇${checkerColorLabel(color)}；輪到${nameByPid(x,rank[idx])}選擇下一個顏色。`;
   return null;
@@ -420,7 +461,11 @@ function resolveAiExtraRps(x){
     return;
   }
   const result=resolveRpsChoices(x,x.rps.choices);if(!result)return;
-  if(result.tie){x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};broadcast(x);return setTimeout(()=>aiExtraRpsChoose(x),650);}
+  if(result.tie){
+    x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};
+    broadcast(x);
+    return setTimeout(()=>aiExtraRpsChoose(x),650);
+  }
   x.g.turn=result.winnerPid;x.rps={phase:'done',choices:x.rps.choices,result:`${result.winnerName} 猜拳獲勝！先手。`,winnerPid:result.winnerPid};x.g.started=true;setTurnDeadline(x);broadcast(x);
   if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
 }
@@ -873,7 +918,7 @@ wss.on('connection',ws=>{
     }else if(m.action==='ai'){
       const mode=normalizeMode(m.mode),difficulty=normalizeDifficulty(m.difficulty);x=createRoom(mode,false,true,2);x.difficulty=difficulty;
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
-      if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;}
+      if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){initBanqiBoard(x.g);x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;}
       send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
       if(isExtraMode(mode))setTimeout(()=>aiExtraRpsChoose(x),500);
     }else if(m.action==='join'){
@@ -933,7 +978,23 @@ wss.on('connection',ws=>{
     else if(m.action==='inviteRematch'&&!x.ai){const e=inviteRematch(x,p);if(e)send(p,{type:'error',message:e});else broadcast(x);}
     else if(m.action==='rematchResponse'&&!x.ai){
       const inv=x.rematchInvite;if(!inv||inv.toPid!==p.pid)return send(p,{type:'error',message:'沒有等待中的再戰邀請'});x.rematchInvite=null;if(m.accept){resetOnlineRound(x);broadcast(x);}else{const inviter=x.players.find(q=>q.pid===inv.fromPid);if(inviter)send(inviter,{type:'notice',message:`${p.name} 暫時不進行下一場。`});broadcast(x);}
-    }else if(m.action==='aiRematch'&&x.ai){x.g=newGame(x.mode);x.undoStack=[];x.checkEvent=null;x.chat=[];if(isBanqi(x.mode)){p.color=null;x.aiColor=null;x.g.turn=p.pid;x.g.started=true;setTurnDeadline(x);}else if(x.mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;x.checkerColorOrder=[];x.checkerColorByPid={};x.rps=newRps();setTimeout(()=>aiExtraRpsChoose(x),400);}else{x.g.turn=p.color;setTurnDeadline(x);}broadcast(x);}
+    }else if(m.action==='aiRematch'&&x.ai){
+      x.g=newGame(x.mode);
+      x.undoStack=[];x.checkEvent=null;x.chat=[];
+      x.rps=newRps();
+      if(isBanqi(x.mode)){
+        p.color=null;x.aiColor=null;
+        initBanqiBoard(x.g);
+        x.g.turn=null;x.g.started=true;
+        setTimeout(()=>aiExtraRpsChoose(x),400);
+      }else if(x.mode==='checkers'){
+        p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;x.checkerColorOrder=[];x.checkerColorByPid={};
+        setTimeout(()=>aiExtraRpsChoose(x),400);
+      }else{
+        x.g.turn=p.color;setTurnDeadline(x);
+      }
+      broadcast(x);
+    }
   });
   ws.on('close',()=>{
     if(p&&!x)removeFromMatchmaking(p);if(!x||!p)return;
