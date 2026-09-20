@@ -229,15 +229,16 @@ function scoreGo(g){
     while(q.length){const [rr,cc]=q.pop();region.push([rr,cc]);for(const [nr,nc] of goNeighbors(rr,cc)){const v=board[nr][nc];if(v===null){const k=`${nr},${nc}`;if(!seen.has(k)){seen.add(k);q.push([nr,nc]);}}else touch.add(v);}}
     if(touch.size===1){if(touch.has('black'))black+=region.length;else white+=region.length;}
   }
-  // The supplied specification recommends Chinese area scoring and specifies 3.75 komi for Black.
-  black+=3.75;
-  return{black,white,blackStones:black-3.75,whiteStones:white,dead};
+  // User-supplied Go endgame specification: Chinese area scoring; 3.75 komi is awarded to White.
+  // The requested win threshold is Black area > 184.25 (i.e. at least 185 area points).
+  const blackArea=black,whiteArea=white,whiteWithKomi=white+3.75;
+  return{black:blackArea,white:whiteWithKomi,blackArea,whiteArea,komi:3.75,blackStones:blackArea,whiteStones:whiteArea,dead,blackWin:blackArea>184.25};
 }
 function finalizeGoScore(x){
   const sc=scoreGo(x.g);x.g.score=sc;
-  x.g.winner=sc.black>sc.white?'black':sc.white>sc.black?'white':'draw';
-  x.g.winnerPid=x.g.winner==='draw'?null:x.ai?(x.g.winner===x.players[0].color?x.players[0].pid:'ai'):x.players.find(q=>q.color===x.g.winner)?.pid||null;
-  x.g.endedReason=`圍棋終局：黑 ${sc.black.toFixed(2)} 分，白 ${sc.white.toFixed(2)} 分；${x.g.winner==='draw'?'和棋':`${x.g.winner==='black'?'黑方':'白方'}獲勝！`}`;
+  x.g.winner=sc.blackWin?'black':'white';
+  x.g.winnerPid=x.ai?(x.g.winner===x.players[0].color?x.players[0].pid:'ai'):x.players.find(q=>q.color===x.g.winner)?.pid||null;
+  x.g.endedReason=`圍棋終局：黑 ${sc.blackArea} 子，白 ${sc.whiteArea} 子 + 貼目 ${sc.komi.toFixed(2)} = ${sc.white.toFixed(2)}；${x.g.winner==='black'?'黑方獲勝（黑方達 185 子）':'白方獲勝（黑方未達 185 子）'}！`;
   x.g.phase='ended';x.g.turn=null;x.g.turnDeadline=null;
 }
 function confirmGoScore(x,p){

@@ -185,17 +185,31 @@ function renderXiangqiBoard(board){
   for(let r=0;r<10;r++)for(let c=0;c<9;c++){const el=document.createElement('button');el.type='button';el.className='point';el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;const p=currentBoardCell(r,c),key=`${r},${c}`;if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');if(hm.has(key))el.classList.add('hint',hm.get(key));if(p&&CH[p.t]){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp)}el.onclick=()=>clickCell(r,c);points.appendChild(el);}
 }
 function renderGridBoard(board,g){
-  const n=Number(state.size)||(g==='gomoku'?15:19);board.innerHTML='';board.className='grid-game-board board-'+g;board.style.setProperty('--n',n);
+  const n=Number(state.size)||(g==='gomoku'?15:19);
+  board.innerHTML='';board.className='point-board board-'+g;board.style.setProperty('--n',n);
+  const lines=document.createElement('div');lines.className='point-board-lines';
+  for(let i=0;i<n;i++){
+    const h=document.createElement('i');h.style.top=`${i/(n-1)*100}%`;lines.appendChild(h);
+    const v=document.createElement('i');v.style.left=`${i/(n-1)*100}%`;lines.appendChild(v);
+  }
+  board.appendChild(lines);
   const starSet=new Set();
-  if(g==='go'){for(const r of [3,9,15])for(const c of [3,9,15])starSet.add(`${r},${c}`);}
-  else if(g==='gomoku'){for(const r of [3,7,11])for(const c of [3,7,11])starSet.add(`${r},${c}`);}
+  if(g==='go'){
+    for(const r of [3,9,15])for(const c of [3,9,15])starSet.add(`${r},${c}`);
+  }else if(g==='gomoku'){
+    for(const r of [3,7,11])for(const c of [3,7,11])starSet.add(`${r},${c}`);
+  }
+  const layer=document.createElement('div');layer.className='point-layer';board.appendChild(layer);
   for(let r=0;r<n;r++)for(let c=0;c<n;c++){
-    const el=document.createElement('button');el.type='button';el.className='grid-point';el.style.gridRow=r+1;el.style.gridColumn=c+1;
+    const el=document.createElement('button');el.type='button';el.className='board-intersection';
+    el.style.left=`${c/(n-1)*100}%`;el.style.top=`${r/(n-1)*100}%`;
+    el.setAttribute('aria-label',`${r+1},${c+1} 交叉點`);
     if(starSet.has(`${r},${c}`))el.classList.add('star');
-    const p=currentBoardCell(r,c);
-    if(p){el.classList.add(p==='black'?'stone-black':'stone-white');}
-    if(g==='go' && state.goPhase==='scoring' && state.deadGroups?.some(key=>key.split(';').includes(`${r},${c}`))){el.classList.add('dead-marked');}
-    el.onclick=()=>clickCell(r,c);board.appendChild(el);
+    const cell=currentBoardCell(r,c);
+    if(cell)el.classList.add(cell==='black'?'stone-black':'stone-white');
+    if(g==='go' && state.goPhase==='scoring' && state.deadGroups?.some(key=>key.split(';').includes(`${r},${c}`)))el.classList.add('dead-marked');
+    if(!cell && state.turn===myColor && !state.winner && (g!=='go'||state.goPhase!=='scoring'))el.classList.add('empty-intersection');
+    el.onclick=()=>clickCell(r,c);layer.appendChild(el);
   }
 }
 function renderHistory(){
