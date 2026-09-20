@@ -249,6 +249,7 @@ const CHECKER_CAMPS=[
 const CHECKER_COLOR_LABELS={red:'紅色',blue:'藍色',green:'綠色'};
 const CHECKER_COLOR_ARM={green:0,blue:2,red:4};
 const CHECKER_COLORS=['red','blue','green'];
+CHECKER_CAMP_DISTANCES=buildCheckerCampDistances();
 function checkerColorLabel(c){return CHECKER_COLOR_LABELS[c]||'待定';}
 function checkerArm(di){return (CHECKER_CAMPS[di]||[]).slice();}
 function checkerCamps(count){return CHECKER_CAMPS.map(c=>c.slice());}
@@ -296,6 +297,27 @@ function buildCheckerGraphs(){
 }
 const CHECKER_GRAPH=buildCheckerGraphs();
 const CHECKER_HOLE_SET=new Set(CHECKER_HOLES.map(h=>h.id));
+
+// 跳棋 AI 以目標營地為方向，依棋孔圖的最短距離評分，避免無意義前後折返。
+function buildCheckerCampDistances(){
+  const result=[];
+  for(const camp of CHECKER_CAMPS){
+    const dist=Object.fromEntries(CHECKER_HOLES.map(h=>[h.id,Infinity]));
+    const queue=[];
+    for(const id of camp){dist[id]=0;queue.push(id);}
+    for(let i=0;i<queue.length;i++){
+      const cur=queue[i];
+      const base=dist[cur];
+      for(const n of checkerNeighbors(cur)){
+        if(dist[n]===Infinity){dist[n]=base+1;queue.push(n);}
+      }
+    }
+    result.push(dist);
+  }
+  return result;
+}
+let CHECKER_CAMP_DISTANCES=[];
+
 function checkerNeighbors(id){return CHECKER_GRAPH.neighbors[id]||[];}
 function checkerJumpTargets(id){return (CHECKER_GRAPH.jumps[id]||[]).map(x=>x.to);}
 function checkerPlayerByPid(x,pid){if(pid==='ai'&&x.ai)return{pid:'ai',name:'電腦',avatar:'🤖',color:x.aiColor||'blue',connected:true};return x.players.find(p=>p.pid===pid)||null;}
@@ -341,10 +363,35 @@ function applyCheckers(x,p,m){
   const g=x.g;if(!g.started)return{error:'等待其他玩家加入'};if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.pid)return{error:'還沒輪到你'};
   const from=String(m.from||''),to=String(m.to||''),color=p.color;
   if(g.board[from]!==color)return{error:'只能移動自己的棋子'};if(g.board[to])return{error:'目標位置已有棋子'};if(!CHECKER_HOLE_SET.has(from)||!CHECKER_HOLE_SET.has(to))return{error:'無效棋孔'};
-  const chain=g.chain&&g.chain.pid===p.pid;let kind=checkerCanStep(x,p.pid,from,to)?'step':checkerCanJump(x,from,to)?'jump':null;if(chain&&kind!=='jump')kind=null;if(!kind)return{error:chain?'連跳只能再跳躍，或按停止連跳':'只能單步或等距跳躍'};
-  const before=clone(g);g.board[to]=g.board[from];delete g.board[from];g.history.push({n:g.move,color,from,to,kind});g.move++;x.undoStack.push(before);
-  if(kind==='jump'){g.chain={pid:p.pid,pos:to};if(checkerWon(x,p)){g.winner=p.color;g.winnerPid=p.pid;g.endedReason=`${p.name} 已將全部棋子移入目標大本營，獲勝！`;g.turn=null;g.turnDeadline=null;g.chain=null;return{ok:true};}if(!checkerHasAnyJump(x,to)){g.chain=null;g.turn=nextCheckerPid(x,p.pid);setTurnDeadline(x);}else setTurnDeadline(x);}
-  else {if(checkerWon(x,p)){g.winner=p.color;g.winnerPid=p.pid;g.endedReason=`${p.name} 已將全部棋子移入目標大本營，獲勝！`;g.turn=null;g.turnDeadline=null;return{ok:true};}g.chain=null;g.turn=nextCheckerPid(x,p.pid);setTurnDeadline(x);}
+  const chain=g.chain&&g.chain.pid===p.pid;
+  if(chain && from!==g.chain.pos)return{error:'連跳中必須使用同一顆棋子'};
+  let kind=checkerCanStep(x,p.pid,from,to)?'step':checkerCanJump(x,from,to)?'jump':null;
+  if(chain&&kind!=='jump')kind=null;
+  if(!kind)return{error:chain?'連跳只能再跳躍，或按「停止連跳」':'只能單步或等距跳躍'};
+
+  const before=clone(g);
+  g.board[to]=g.board[from];delete g.board[from];
+  g.history.push({n:g.move,color,from,to,kind});g.move++;x.undoStack.push(before);
+
+  if(checkerWon(x,p)){
+    g.winner=p.color;g.winnerPid=p.pid;
+    g.endedReason=`${p.name} 已將全部棋子移入目標大本營，獲勝！`;
+    g.turn=null;g.turnDeadline=null;g.chain=null;
+    return{ok:true};
+  }
+
+  // 跳棋：同一顆棋如果還有合法跳躍，留在同一回合繼續連跳。
+  // 每一次連跳都沿用同一個 30 秒回合倒數，不重置計時器。
+  if(kind==='jump' && checkerHasAnyJump(x,to)){
+    g.chain={pid:p.pid,pos:to};
+    g.turn=p.pid;
+    return{ok:true};
+  }
+
+  // 沒有下一個合法跳躍（或本手是普通走一步）才交棒給下一位。
+  g.chain=null;
+  g.turn=nextCheckerPid(x,p.pid);
+  setTurnDeadline(x);
   return{ok:true};
 }
 function checkerHasAnyJump(x,from){for(const to of checkerJumpTargets(from))if(checkerCanJump(x,from,to))return true;return false;}
@@ -773,7 +820,7 @@ function armAIWatchdog(x){
 function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
   mode=normalizeMode(mode);
   const cap=mode==='checkers'?(maxPlayers===3?3:2):2;
-  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0};
+  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0,aiLastMove:null};
   if(isBanqi(mode))initBanqiBoard(x.g);
   if(mode==='checkers')x.g.holes=CHECKER_HOLES;
   if(ai)armAIWatchdog(x);
@@ -956,21 +1003,59 @@ function aiBanqiAction(x){
   if(covered.length){const [r,c]=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r,c});}
   return{error:'AI 沒有合法動作'};
 }
-function aiCheckersMove(x){
-  const p={pid:'ai',name:'電腦',color:x.aiColor||'blue'},g=x.g;
-  if(g.chain?.pid==='ai'){
-    const from=g.chain.pos;
-    for(const to of checkerJumpTargets(from))if(checkerCanJump(x,from,to))return applyCheckers(x,p,{from,to});
-    return stopCheckerChain(x,p);
-  }
-  const moves=[];
-  for(const [id,occ] of Object.entries(g.board))if(occ===p.color){
-    for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to))moves.push({from:id,to,score:1});
-    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to))moves.push({from:id,to,score:6});
-  }
-  if(!moves.length)return null;
-  return applyCheckers(x,p,moves[Math.floor(Math.random()*moves.length)]);
+function checkerGoalDistance(x,id,color){
+  const arm=CHECKER_COLOR_ARM[color];
+  const target=(arm!=null?x.checkerCamps?.[(arm+3)%6]:null)||[];
+  if(!target.length)return Infinity;
+  const map=CHECKER_CAMP_DISTANCES?.[(arm+3)%6];
+  return map&&Number.isFinite(map[id])?map[id]:Infinity;
 }
+function aiCheckersMove(x){
+  const p={pid:'ai',name:'電腦',color:x.aiColor||'red'},g=x.g;
+  if(!p.color)return null;
+  const moves=[],last=x.aiLastMove||null;
+  const chainPos=g.chain?.pid==='ai'?g.chain.pos:null;
+
+  const addMovesForPiece=(id,allowStep)=>{
+    if(g.board[id]!==p.color)return;
+    if(allowStep){
+      for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to)){
+        const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
+        const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
+        let score=progress*30-2+Math.random()*2;
+        if(last&&last.from===to&&last.to===id)score-=220;
+        moves.push({from:id,to,kind:'step',score});
+      }
+    }
+    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to)){
+      const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
+      const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
+      let score=85+progress*36+Math.random()*2;
+      if(d1===0)score+=220;
+      if(last&&last.from===to&&last.to===id)score-=320;
+      // 連跳中更偏好能繼續形成跳躍的落點，避免不必要折返。
+      if(chainPos && checkerHasAnyJump(x,to))score+=140;
+      moves.push({from:id,to,kind:'jump',score});
+    }
+  };
+
+  if(chainPos){
+    // AI 連跳時只能使用同一顆棋，且只能再跳。
+    addMovesForPiece(chainPos,false);
+  }else{
+    for(const [id,occ] of Object.entries(g.board))if(occ===p.color)addMovesForPiece(id,true);
+  }
+
+  if(!moves.length)return null;
+  moves.sort((a,b)=>b.score-a.score);
+  let pick=moves[0];
+  if(x.difficulty==='easy')pick=moves[Math.floor(Math.random()*Math.min(6,moves.length))];
+  else if(x.difficulty==='normal')pick=moves[Math.floor(Math.random()*Math.min(3,moves.length))];
+  const res=applyCheckers(x,p,{from:pick.from,to:pick.to});
+  if(res?.ok)x.aiLastMove={from:pick.from,to:pick.to,kind:pick.kind};
+  return res;
+}
+
 function aiTurn(x){
   if(!x.ai||x.g.winner)return;
   if(Date.now()<(x.aiNextAt||0))return;
@@ -1123,7 +1208,7 @@ wss.on('connection',ws=>{
     }else if(m.action==='aiRematch'&&x.ai){
       x.g=newGame(x.mode);
       armAIWatchdog(x);
-      x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;
+      x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;x.aiLastMove=null;
       x.rps=newRps();
       if(isBanqi(x.mode)){
         p.color=null;x.aiColor=null;
@@ -1154,4 +1239,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.6 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.9 multi-game on ${PORT}`));

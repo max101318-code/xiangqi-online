@@ -311,9 +311,9 @@ function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
   const art=document.createElement('img');
   art.className='checker-reference-image';
-  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.7';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.9';
   art.alt='跳棋棋盤';art.draggable=false;
-  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.7';}};
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.9';}};
   board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){
@@ -337,11 +337,24 @@ function clickCheckerHole(id){
   if(!state||state.mode==='spectator'||state.winner||!isMyTurn())return;
   const mineColor=state.players?.find(p=>p.pid===myPid)?.color;
   const occ=state.board?.[id]||null,chainActive=state.chain?.pid===myPid;
+
+  // 連跳期間固定使用目前這顆棋，不再因為點空白處而偷偷結束連跳。
+  if(chainActive){
+    if(!selected)selected=state.chain.pos;
+    if(id===state.chain.pos)return;
+    if(!occ){send({action:'move',from:state.chain.pos,to:id});playSound('move');renderBoard();}
+    else if(occ===mineColor){
+      // 連跳不能換棋；保持目前連跳棋。
+      toast('連跳中只能使用目前這顆棋','error');
+    }
+    return;
+  }
+
   if(!selected){if(occ===mineColor){selected=id;playSound('select');renderBoard();}return;}
   if(selected===id){selected=null;renderBoard();return;}
-  if(chainActive&&occ===mineColor){send({action:'stopChain'});selected=null;renderBoard();return;}
-  if(chainActive&&!occ){send({action:'stopChain'});selected=null;renderBoard();return;}
-  send({action:'move',from:selected,to:id});selected=null;playSound('move');renderBoard();
+  if(occ&&occ!==mineColor){send({action:'move',from:selected,to:id});selected=null;playSound('capture');renderBoard();return;}
+  if(!occ){send({action:'move',from:selected,to:id});selected=null;playSound('move');renderBoard();return;}
+  selected=id;playSound('select');renderBoard();
 }
 function renderHistory(){
   const hist=state.history||[];$('move-count').textContent=`${hist.length} 手`;
