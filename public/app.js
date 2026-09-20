@@ -311,9 +311,9 @@ function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
   const art=document.createElement('img');
   art.className='checker-reference-image';
-  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.10';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.11';
   art.alt='跳棋棋盤';art.draggable=false;
-  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.10';}};
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.11';}};
   board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){
@@ -448,6 +448,12 @@ function clickCell(r,c){
     if(!p){
       send({action:'move',subaction:'move',r:selected[0],c:selected[1],toR:r,toC:c});
       selected=null;playSound('move');renderBoard();return;
+    }
+    // 暗棋：吃向未翻開的己方棋時，不是切換選棋，而是送出「踩到暗棋」動作；
+    // 伺服器會翻開目標、原攻擊棋留在原地並立即換手。
+    if(state.gameMode==='darkbanqi' && p.color===myColor && !p.revealed){
+      send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});
+      selected=null;playSound('select');renderBoard();return;
     }
     if(p.color===myColor){selected=[r,c];playSound('select');renderBoard();return;}
     send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});

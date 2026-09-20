@@ -820,7 +820,7 @@ function armAIWatchdog(x){
 function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
   mode=normalizeMode(mode);
   const cap=mode==='checkers'?(maxPlayers===3?3:2):2;
-  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0,aiLastMove:null};
+  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0,aiLastMove:null,aiReverseCount:0};
   if(isBanqi(mode))initBanqiBoard(x.g);
   if(mode==='checkers')x.g.holes=CHECKER_HOLES;
   if(ai)armAIWatchdog(x);
@@ -949,6 +949,55 @@ function banqiAICaptureCandidates(x,p){
   }
   return c;
 }
+function banqiAIAllCandidates(x,p){
+  const g=x.g,c=[];
+  // 翻棋：所有未翻開棋都算合法候選，不因某一顆已翻開棋無法動就放棄整回合。
+  for(let r=0;r<BANQI_ROWS;r++)for(let col=0;col<BANQI_COLS;col++){
+    const t=g.board[r][col];
+    if(t&&!t.revealed)c.push({action:'flip',r,c:col,toR:r,toC:col,score:40+Math.random()*4});
+  }
+  // 所有己方已翻開棋：逐顆檢查「走一步」與「吃棋」。
+  for(let r=0;r<BANQI_ROWS;r++)for(let col=0;col<BANQI_COLS;col++){
+    const me=g.board[r][col];
+    if(!me||!me.revealed||me.color!==p.color)continue;
+    // 普通移動
+    if(me.type!=='cannon'){
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const rr=r+dr,cc=col+dc;
+        if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS||g.board[rr][cc])continue;
+        c.push({action:'move',r,c:col,toR:rr,toC:cc,score:10+Math.random()*3});
+      }
+    } else {
+      // 炮也可以走到相鄰空格，但吃棋必須走「飛吃」規則。
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const rr=r+dr,cc=col+dc;
+        if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS||g.board[rr][cc])continue;
+        c.push({action:'move',r,c:col,toR:rr,toC:cc,score:9+Math.random()*3});
+      }
+    }
+    // 直向四鄰吃棋；炮則檢查所有直線敵棋＋恰好一枚炮架。
+    if(me.type==='cannon'){
+      for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
+        const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+        const test=t.revealed?t:Object.assign({},t,{revealed:true});
+        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:120+(t.revealed?20:10)+Math.random()*3});
+        else if(x.mode==='darkbanqi'&&!t.revealed)c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:80+Math.random()*3});
+      }
+    }else{
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const rr=r+dr,cc=col+dc;
+        if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;
+        const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+        if(x.mode==='banqi'&&!t.revealed)continue;
+        const test=t.revealed?t:Object.assign({},t,{revealed:true});
+        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:100+BANQI_RANK[test.type]+Math.random()*4});
+        else if(x.mode==='darkbanqi'&&!t.revealed)c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:t.color===me.color?95:70+Math.random()*3});
+      }
+    }
+  }
+  return c;
+}
+
 function aiBanqiAction(x){
   const p={pid:'ai',name:'電腦',color:x.aiColor},g=x.g;
   if(!p.color){
@@ -956,6 +1005,7 @@ function aiBanqiAction(x){
     if(covered.length){const [r,c]=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r,c});}
     return{error:'沒有可翻棋子'};
   }
+  // 連吃中只能使用目前那一顆；這是規則限制，不代表其他棋子沒有合法動作。
   if(g.chain?.pid==='ai'){
     const fromR=g.chain.r,fromC=g.chain.c,me=g.board[fromR]?.[fromC],cands=[];
     if(me){
@@ -971,38 +1021,37 @@ function aiBanqiAction(x){
           const t=g.board[rr][cc];if(!t)continue;
           const test=t.revealed?t:Object.assign({},t,{revealed:true});
           if(t.revealed){
-            if(t.color!==me.color && banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc))
-              cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
+            if(t.color!==me.color&&banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc))cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
           }else if(x.mode==='darkbanqi'){
-            // 暗棋踩到未翻開棋必須先揭露；己方暗棋或無法吃的敵方暗棋都會使連吃停下，
-            // 只有真正能吃掉的暗棋才會把攻擊棋移到目標格。
             cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:t.color===me.color?95:banqiCanEat(me,test)?105:90});
           }
         }
       }
     }
     if(!cands.length)return stopBanqiChain(x,p);
-    return applyBanqi(x,p,cands[Math.floor(Math.random()*cands.length)]);
+    cands.sort((a,b)=>b.score-a.score);
+    return applyBanqi(x,p,cands[0]);
   }
-  const captures=banqiAICaptureCandidates(x,p);
-  const moves=[];
-  for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++){
-    const me=g.board[r][c];if(!me||!me.revealed||me.color!==p.color)continue;
-    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const rr=r+dr,cc=c+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;
-      if(!g.board[rr][cc])moves.push({action:'move',r,c,toR:rr,toC:cc,score:10});
-    }
+  // 正常回合：把「所有己方棋子」的合法候選一次建完，再逐個嘗試。
+  // 因此不會因某一支棋不能走，就錯誤判定 AI 整回合沒有合法走法。
+  const candidates=banqiAIAllCandidates(x,p);
+  if(!candidates.length)return{error:'AI 沒有合法動作'};
+  candidates.sort((a,b)=>b.score-a.score);
+  const pool=x.difficulty==='hard'?candidates.slice(0,Math.min(40,candidates.length)):
+             x.difficulty==='easy'?candidates.slice(0,Math.min(candidates.length,20)):
+             candidates.slice(0,Math.min(24,candidates.length));
+  // 依難度混入少量隨機，避免每局完全固定；但每一個候選都會經過伺服器合法檢查。
+  for(let i=0;i<pool.length;i++){
+    const j=x.difficulty==='hard'?i:Math.floor(Math.random()*pool.length);
+    const pick=pool[j]||pool[i];
+    const res=applyBanqi(x,p,pick);
+    if(res?.ok)return res;
+    pool.splice(j,1);
+    if(!pool.length)break;
   }
-  const covered=[];for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++)if(g.board[r][c]&&!g.board[r][c].revealed)covered.push([r,c]);
-  if(captures.length){
-    captures.sort((a,b)=>b.score-a.score);
-    const pick=x.difficulty==='hard'?captures[0]:captures[Math.floor(Math.random()*Math.min(captures.length, x.difficulty==='easy'?captures.length:4))];
-    return applyBanqi(x,p,pick);
-  }
-  if(moves.length)return applyBanqi(x,p,moves[Math.floor(Math.random()*Math.min(moves.length,8))]);
-  if(covered.length){const [r,c]=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r,c});}
-  return{error:'AI 沒有合法動作'};
+  return{error:'AI 已檢查全部候選，但目前沒有可執行的合法行動'};
 }
+
 function checkerGoalDistance(x,id,color){
   const arm=CHECKER_COLOR_ARM[color];
   const target=(arm!=null?x.checkerCamps?.[(arm+3)%6]:null)||[];
@@ -1015,6 +1064,7 @@ function aiCheckersMove(x){
   if(!p.color)return null;
   const moves=[],last=x.aiLastMove||null;
   const chainPos=g.chain?.pid==='ai'?g.chain.pos:null;
+  const reverseCount=Number(x.aiReverseCount||0);
 
   const addMovesForPiece=(id,allowStep)=>{
     if(g.board[id]!==p.color)return;
@@ -1023,7 +1073,9 @@ function aiCheckersMove(x){
         const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
         const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
         let score=progress*30-2+Math.random()*2;
-        if(last&&last.from===to&&last.to===id)score-=220;
+        const reversing=!!(last&&last.from===to&&last.to===id);
+        if(reversing&&reverseCount>=2)continue;
+        if(reversing)score-=220;
         moves.push({from:id,to,kind:'step',score});
       }
     }
@@ -1032,7 +1084,9 @@ function aiCheckersMove(x){
       const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
       let score=85+progress*36+Math.random()*2;
       if(d1===0)score+=220;
-      if(last&&last.from===to&&last.to===id)score-=320;
+      const reversing=!!(last&&last.from===to&&last.to===id);
+      if(reversing&&reverseCount>=2)continue;
+      if(reversing)score-=320;
       // 連跳中更偏好能繼續形成跳躍的落點，避免不必要折返。
       if(chainPos && checkerHasAnyJump(x,to))score+=140;
       moves.push({from:id,to,kind:'jump',score});
@@ -1052,7 +1106,11 @@ function aiCheckersMove(x){
   if(x.difficulty==='easy')pick=moves[Math.floor(Math.random()*Math.min(6,moves.length))];
   else if(x.difficulty==='normal')pick=moves[Math.floor(Math.random()*Math.min(3,moves.length))];
   const res=applyCheckers(x,p,{from:pick.from,to:pick.to});
-  if(res?.ok)x.aiLastMove={from:pick.from,to:pick.to,kind:pick.kind};
+  if(res?.ok){
+    const reversing=!!(last&&last.from===pick.to&&last.to===pick.from);
+    x.aiReverseCount=reversing?reverseCount+1:0;
+    x.aiLastMove={from:pick.from,to:pick.to,kind:pick.kind};
+  }
   return res;
 }
 
@@ -1208,7 +1266,7 @@ wss.on('connection',ws=>{
     }else if(m.action==='aiRematch'&&x.ai){
       x.g=newGame(x.mode);
       armAIWatchdog(x);
-      x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;x.aiLastMove=null;
+      x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;x.aiLastMove=null;x.aiReverseCount=0;
       x.rps=newRps();
       if(isBanqi(x.mode)){
         p.color=null;x.aiColor=null;
@@ -1239,4 +1297,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.10 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.11 multi-game on ${PORT}`));
