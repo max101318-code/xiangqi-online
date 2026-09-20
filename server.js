@@ -248,17 +248,18 @@ function confirmGoScore(x,p){
   return{ok:true};
 }
 function createRoom(mode,matchmade=false,ai=false){
-  const x={id:rid(),mode:normalizeMode(mode),ai,players:[],g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade};
+  const x={id:rid(),mode:normalizeMode(mode),ai,players:[],spectators:[],g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade};
   rooms.set(x.id,x);return x;
 }
 function playerList(x){return x.players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null,connected:p.connected!==false})).concat(x.ai?[{pid:'ai',name:'電腦',avatar:'🤖',color:x.mode==='xiangqi'?'black':'white',connected:true}]:[]);}
 function send(p,o){if(p?.ws?.readyState===1)p.ws.send(JSON.stringify(o));}
 function setTurnDeadline(x){x.g.turnDeadline=x.g.turn?Date.now()+TURN_SECONDS*1000:null;}
 function publicSnapshot(x,p){
-  const rps=x.rps?{phase:x.rps.phase,result:x.rps.result||null,winnerPid:x.rps.winnerPid||null,isRpsWinner:x.rps.winnerPid===p.pid,youChoice:x.rps.choices?.[p.pid]||null,hasOpponentChoice:x.players.some(q=>q.pid!==p.pid&&x.rps.choices?.[q.pid])}:null;
-  return {type:'state',roomId:x.ai||x.matchmade?null:x.id,matchmade:!!x.matchmade,mode:x.ai?'ai':'online',gameMode:x.mode,difficulty:x.difficulty||null,color:p.color||null,turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,board:x.g.b||x.g.board,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),rps,roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null,proposal:x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null,avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null};
+  const spectator=p.role==='spectator';
+  const rps=x.rps?{phase:x.rps.phase,result:x.rps.result||null,winnerPid:x.rps.winnerPid||null,isRpsWinner:!spectator&&x.rps.winnerPid===p.pid,youChoice:!spectator?(x.rps.choices?.[p.pid]||null):null,hasOpponentChoice:spectator?false:x.players.some(q=>q.pid!==p.pid&&x.rps.choices?.[q.pid])}:null;
+  return {type:'state',roomId:spectator?x.id:(x.ai||x.matchmade?null:x.id),spectatorCode:x.id,matchmade:!!x.matchmade,mode:spectator?'spectator':(x.ai?'ai':'online'),gameMode:x.mode,difficulty:x.difficulty||null,color:spectator?null:(p.color||null),turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,board:x.g.b||x.g.board,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),spectators:x.spectators?.length||0,rps,roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:spectator?null:(x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null),proposal:spectator?null:(x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null),avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null};
 }
-function broadcast(x){x.players.forEach(p=>send(p,publicSnapshot(x,p)));}
+function broadcast(x){[...x.players,...(x.spectators||[])].forEach(p=>send(p,publicSnapshot(x,p)));}
 function broadcastMatchmakingWaiting(item){send(item.p,{type:'matchmaking',status:'searching',mode:item.mode});}
 function removeFromMatchmaking(p){for(let i=matchmakingQueue.length-1;i>=0;i--)if(matchmakingQueue[i].p===p)matchmakingQueue.splice(i,1);}
 function tryMatchmaking(){
@@ -380,25 +381,38 @@ wss.on('connection',ws=>{
   ws.on('message',raw=>{
     let m;try{m=JSON.parse(raw)}catch{return}
     if(m.action==='create'){
-      const mode=normalizeMode(m.mode);x=createRoom(mode,false,false);p={ws,pid:pid(),profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
-      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:mode,matchmade:false});send(p,publicSnapshot(x,p));
+      const mode=normalizeMode(m.mode);x=createRoom(mode,false,false);p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
+      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:mode,matchmade:false,spectatorCode:x.id});send(p,publicSnapshot(x,p));
+    }else if(m.action==='watch'){
+      if(x||p)return send({ws},{type:'error',message:'你目前已有一個連線中的對局，請先離開。'});
+      const code=String(m.roomId||'').trim().toUpperCase();
+      x=rooms.get(code);
+      if(!x)return send({ws},{type:'error',message:'找不到這個觀戰房間。'});
+      if(!x.ai&&x.rps?.phase!=='done')return send({ws},{type:'error',message:'這場對局尚未開始，請等雙方完成猜拳與選色後再觀戰。'});
+      p={ws,pid:pid(),role:'spectator',profileId:String(m.profileId||''),name:String(m.name||'觀戰者').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.spectators.push(p);
+      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'spectator',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});send(p,publicSnapshot(x,p));broadcast(x);
     }else if(m.action==='matchmake'){
       if(x||p)return send({ws},{type:'error',message:'你已在房間中'});const mode=normalizeMode(m.mode);
-      p={ws,pid:pid(),profileId:String(m.profileId||''),name:String(m.name||'玩家').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};
+      p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};
       const item={ws,p,mode,cancelled:false,assign:room=>{x=room;}};matchmakingQueue.push(item);broadcastMatchmakingWaiting(item);tryMatchmaking();
     }else if(m.action==='cancelMatchmake'){
       if(p&&!x){removeFromMatchmaking(p);send(p,{type:'matchmaking',status:'cancelled'});}
     }else if(m.action==='ai'){
       const mode=normalizeMode(m.mode),difficulty=normalizeDifficulty(m.difficulty);x=createRoom(mode,false,true);x.difficulty=difficulty;
-      p={ws,pid:pid(),profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:mode==='xiangqi'?'red':'black',connected:true};x.players.push(p);x.g.turn=p.color;setTurnDeadline(x);
-      send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty});send(p,publicSnapshot(x,p));
+      p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:mode==='xiangqi'?'red':'black',connected:true};x.players.push(p);x.g.turn=p.color;setTurnDeadline(x);
+      send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
     }else if(m.action==='join'){
       x=rooms.get(String(m.roomId||'').trim().toUpperCase());
       if(!x||x.ai||x.players.length>=2)return send({ws},{type:'error',message:'房間不存在、已滿，或這是人機房間'});
-      p={ws,pid:pid(),profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
-      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade});
+      p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
+      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});
       broadcast(x);
     }else if(!x||!p)return;
+    else if(p.role==='spectator'){
+      if(m.action==='leaveWatch'){x.spectators=x.spectators.filter(q=>q!==p);x=x;send(p,{type:'left-watch'});if(!x.players.length&&!x.spectators.length)rooms.delete(x.id);}
+      else if(m.action==='chat')send(p,{type:'error',message:'觀戰模式目前僅能觀看，不能發送聊天訊息。'});
+      else return;
+    }
     else if(m.action==='rps'&&!x.ai){
       if(x.players.length<2)return send(p,{type:'error',message:'請等待另一位玩家加入'});if(x.rps.phase!=='rps')return send(p,{type:'error',message:'目前不是猜拳階段'});
       if(!['剪刀','石頭','布'].includes(m.choice))return send(p,{type:'error',message:'猜拳選項無效'});if(x.rps.choices[p.pid])return send(p,{type:'error',message:'你本輪已經出拳，請等待結果'});
@@ -437,8 +451,13 @@ wss.on('connection',ws=>{
   });
   ws.on('close',()=>{
     if(p&&!x)removeFromMatchmaking(p);if(!x||!p)return;
+    if(p.role==='spectator'){
+      x.spectators=(x.spectators||[]).filter(q=>q!==p);
+      if(!x.players.length&&!x.spectators.length)rooms.delete(x.id);else broadcast(x);
+      return;
+    }
     const online=!x.ai,hadTwo=x.players.length===2;x.players=x.players.filter(q=>q!==p);
-    if(!x.players.length){rooms.delete(x.id);return;}
+    if(!x.players.length&&!x.spectators.length){rooms.delete(x.id);return;}
     if(online&&hadTwo){const survivor=x.players[0];const winner=survivor.color||(x.mode==='xiangqi'?'red':'black');survivor.color=winner;x.g.winner=winner;x.g.winnerPid=survivor.pid;x.g.endedReason='對方已斷線，你方獲勝！';x.g.turnDeadline=null;x.proposal=null;x.rematchInvite=null;x.rps.phase='done';broadcast(x);}
     else broadcast(x);
   });

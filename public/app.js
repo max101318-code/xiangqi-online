@@ -115,16 +115,22 @@ function handle(m){
   if(m.type==='proposal'){showProposal(m.kind,m.fromName);return}
   if(m.type==='matchmaking'){if(m.status==='searching')showMatchmaking('searching');else showMatchmaking('cancelled');return}
   if(m.type==='rematch-invite'){if(m.ended&&m.roomId&&state?.roomId===m.roomId&&state?.winner)showRematchInvite(m.fromName);else hideRematchInvite();return}
-  if(m.type==='room'){hideRematchInvite();myPid=m.pid||myPid;myColor=m.color||null;state={...state,mode:m.mode,gameMode:m.gameMode||selectedGameMode,difficulty:m.difficulty||null,matchmade:!!m.matchmade,roomId:m.roomId||null,color:m.color||null,players:state?.players||[]};if(m.mode==='ai'){showScreen('game-screen');}else showScreen('lobby-screen');return}
+  if(m.type==='room'){
+    hideRematchInvite();myPid=m.pid||myPid;myColor=m.color||null;
+    state={...state,mode:m.mode,gameMode:m.gameMode||selectedGameMode,difficulty:m.difficulty||null,matchmade:!!m.matchmade,roomId:m.roomId||null,spectatorCode:m.spectatorCode||m.roomId||null,color:m.color||null,players:state?.players||[],spectators:state?.spectators||0};
+    if(m.mode==='ai'||m.mode==='spectator')showScreen('game-screen');else showScreen('lobby-screen');
+    return;
+  }
   if(m.type==='state'){
+    const previousBoard=state?.board||null, previousHistory=state?.history||[];
     state=m;
     if(!state.gameMode)state.gameMode=selectedGameMode;
-    myColor=m.color||myColor;
-    if(!myPid&&m.players?.length)myPid=m.players.find(p=>p.color===myColor)?.pid||m.players[0]?.pid;
-    if(!m.winner)hideRematchInvite();
+    myColor=m.mode==='spectator'?null:(m.color||myColor);
+    if(m.mode==='spectator')myPid=m.pid||myPid;
+    else if(!myPid&&m.players?.length)myPid=m.players.find(p=>p.color===myColor)?.pid||m.players[0]?.pid;
+    if(m.mode!=='spectator')updateStatsOnState(m); else hideRematchInvite();
     if(m.board){lastBoard=m.board;}
-    updateStatsOnState(m);
-    renderState();
+    renderState(previousBoard,previousHistory);
     if(m.checkEvent)showCheck(m.checkEvent);
     return;
   }
@@ -154,37 +160,43 @@ function updateLobby(){
 }
 function showMatchmakingCleanup(){$('matchmaking-panel').hidden=true;$('lobby-room-wrap').classList.toggle('matchmaking-hidden',!!state?.matchmade);}
 function sideName(c,g){if(g==='xiangqi')return c==='red'?'紅方':c==='black'?'黑方':'待定';return c==='black'?'黑方':c==='white'?'白方':'待定';}
-function renderState(){
+function renderState(previousBoard=null,previousHistory=[]){
   if(!state)return;
   if(state.mode==='online'&&state.rps?.phase!=='done'){showScreen('lobby-screen');updateLobby();return;}
   showScreen('game-screen');
   const g=state.gameMode||'xiangqi';
-  $('game-eyebrow').textContent=`${modeName(g)} · ${state.mode==='ai'?'AI 對局':'ONLINE 對局'}`;
+  $('game-eyebrow').textContent=`${modeName(g)} · ${state.mode==='ai'?'AI 對局':state.mode==='spectator'?'👁 觀戰模式':'ONLINE 對局'}`;
   $('game-title').innerHTML=`${modeName(g)} <span>Online</span>`;
-  $('game-room-meta').textContent=state.mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:(state.matchmade?'⚡ 快速匹配':'房號 '+(state.roomId||'—'));
-  const me=state.players?.find(p=>p.pid===myPid)||state.players?.find(p=>p.color===myColor);
-  const opp=state.mode==='ai'?{name:'電腦',avatar:'🤖',color:g==='xiangqi'?'black':'white',pid:'ai'}:state.players?.find(p=>p.pid!==myPid);
-  const my=me||{name:profile.name,avatar:profile.avatar,color:myColor};
-  paintAvatar($('you-avatar'),my.avatar||profile.avatar);$('you-name').textContent=my.name||profile.name;$('you-side').textContent=sideName(my.color,g);
+  $('game-room-meta').textContent=state.mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:state.mode==='spectator'?`👁 觀戰 · 觀戰碼 ${state.spectatorCode||state.roomId||'—'}`:(state.matchmade?'⚡ 快速匹配':'房號 '+(state.roomId||'—'));
+  const isSpectator=state.mode==='spectator';
+  const me=isSpectator?null:(state.players?.find(p=>p.pid===myPid)||state.players?.find(p=>p.color===myColor));
+  const opp=state.mode==='ai'?{name:'電腦',avatar:'🤖',color:g==='xiangqi'?'black':'white',pid:'ai'}:isSpectator?(state.players?.[1]||null):state.players?.find(p=>p.pid!==myPid);
+  const specLeft=isSpectator?state.players?.[0]:me;
+  const my=specLeft||{name:isSpectator?'等待玩家':'玩家',avatar:isSpectator?'❔':profile.avatar,color:isSpectator?(specLeft?.color||null):myColor};
+  paintAvatar($('you-avatar'),my.avatar||'❔');$('you-name').textContent=(isSpectator?'👁 ':'')+(my.name||'玩家');$('you-side').textContent=sideName(my.color,g);
   paintAvatar($('opp-avatar'),opp?.avatar||'❔');$('opp-name').textContent=opp?.name||'等待對手';$('opp-side').textContent=sideName(opp?.color,g);
-  renderBoard();renderHistory();renderTurn();updateCountdown();updateActions();renderChat();
+  $('copy-watch').hidden=!state.spectatorCode;
+  if(state.spectatorCode)$('copy-watch').textContent=isSpectator?'複製觀戰碼':'👁 複製觀戰碼';
+  renderBoard(previousBoard,previousHistory);renderHistory();renderTurn();updateCountdown();updateActions();renderChat();
   $('game-notice').textContent=g==='xiangqi'?'將軍會顯示 1.5 秒毛筆字並播放機械音。':g==='gomoku'?'15×15 五連取勝；三種 AI 難度可選。':'19×19 圍棋：19路、氣、提子、自殺禁著、全盤同形禁重複、兩次停手進入終局結算。';
 
   if(g==='go'&&state.score){$('game-notice').textContent=`終局：黑 ${Number(state.score.black).toFixed(2)} · 白 ${Number(state.score.white).toFixed(2)}；點選標記死棋並雙方確認。`;}
 }
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
 function currentBoardCell(r,c){return state?.board?.[r]?.[c]??null;}
-function renderBoard(){
+function renderBoard(previousBoard=null,previousHistory=[]){
   const board=$('board');board.className='';
   const g=state?.gameMode||'xiangqi';board.dataset.mode=g;
-  if(g==='xiangqi')renderXiangqiBoard(board);else renderGridBoard(board,g);
+  if(g==='xiangqi')renderXiangqiBoard(board,previousBoard,previousHistory);else renderGridBoard(board,g,previousHistory);
 }
-function renderXiangqiBoard(board){
+function renderXiangqiBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML=`<svg class="board-lines" viewBox="0 0 8 9" preserveAspectRatio="none"><path d="M0 0H8 M0 1H8 M0 2H8 M0 3H8 M0 4H8 M0 5H8 M0 6H8 M0 7H8 M0 8H8 M0 9H8 M0 0V9 M1 0V9 M2 0V9 M3 0V9 M4 0V9 M5 0V9 M6 0V9 M7 0V9 M8 0V9"/><path d="M3 0L5 2 M5 0L3 2 M3 7L5 9 M5 7L3 9"/><path d="M0 4.5H8" stroke-dasharray=".09 .09"/></svg><div class="river">楚河 <span>漢界</span></div><div id="board-points"></div>`;
   const points=$('board-points'),hs=selected?hints(selected[0],selected[1]):[],hm=new Map(hs.map(x=>[`${x[0]},${x[1]}`,x[2]]));
-  for(let r=0;r<10;r++)for(let c=0;c<9;c++){const el=document.createElement('button');el.type='button';el.className='point';el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;const p=currentBoardCell(r,c),key=`${r},${c}`;if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');if(hm.has(key))el.classList.add('hint',hm.get(key));if(p&&CH[p.t]){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp)}el.onclick=()=>clickCell(r,c);points.appendChild(el);}
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){const el=document.createElement('button');el.type='button';el.className='point';el.dataset.r=r;el.dataset.c=c;el.style.left=`${c/8*100}%`;el.style.top=`${r/9*100}%`;const p=currentBoardCell(r,c),key=`${r},${c}`;if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');if(hm.has(key))el.classList.add('hint',hm.get(key));if(p&&CH[p.t]){const sp=document.createElement('span');sp.className=`piece ${p.t===p.t.toUpperCase()?'red':'black'}`;sp.textContent=CH[p.t];el.appendChild(sp)}el.onclick=()=>clickCell(r,c);points.appendChild(el);}
+  const shouldAnimate=previousBoard&&previousHistory&&state.history?.length===previousHistory.length+1&&state.history.length;
+  if(shouldAnimate)animateXiangqiMove(board,previousBoard,state.history[state.history.length-1]);
 }
-function renderGridBoard(board,g){
+function renderGridBoard(board,g,previousHistory=[]){
   const n=Number(state.size)||(g==='gomoku'?15:19);
   board.innerHTML='';board.className='point-board board-'+g;board.style.setProperty('--n',n);
   const lines=document.createElement('div');lines.className='point-board-lines';
@@ -202,11 +214,12 @@ function renderGridBoard(board,g){
   const layer=document.createElement('div');layer.className='point-layer';board.appendChild(layer);
   for(let r=0;r<n;r++)for(let c=0;c<n;c++){
     const el=document.createElement('button');el.type='button';el.className='board-intersection';
-    el.style.left=`${c/(n-1)*100}%`;el.style.top=`${r/(n-1)*100}%`;
+    el.style.left=`${c/(n-1)*100}%`;el.style.top=`${r/(n-1)*100}%`;el.dataset.r=r;el.dataset.c=c;
     el.setAttribute('aria-label',`${r+1},${c+1} 交叉點`);
     if(starSet.has(`${r},${c}`))el.classList.add('star');
     const cell=currentBoardCell(r,c);
     if(cell)el.classList.add(cell==='black'?'stone-black':'stone-white');
+    if(previousHistory?.length&&state.history?.length===previousHistory.length+1){const lm=state.history[state.history.length-1];if(!lm?.pass&&lm.move?.[0]===r+1&&lm.move?.[1]===c+1)el.classList.add('last-move');}
     if(g==='go' && state.goPhase==='scoring' && state.deadGroups?.some(key=>key.split(';').includes(`${r},${c}`)))el.classList.add('dead-marked');
     if(!cell && state.turn===myColor && !state.winner && (g!=='go'||state.goPhase!=='scoring'))el.classList.add('empty-intersection');
     el.onclick=()=>clickCell(r,c);layer.appendChild(el);
@@ -230,22 +243,25 @@ function updateCountdown(){
   tick();clockTimer=setInterval(tick,250);
 }
 function updateActions(){
-  const myTurn=state?.turn===myColor&&!state?.winner&&state?.goPhase!=='scoring';
+  const spectator=state?.mode==='spectator';
+  const myTurn=!spectator&&state?.turn===myColor&&!state?.winner&&state?.goPhase!=='scoring';
   $('undo-btn').disabled=!myTurn||!(state.history?.length);
   $('draw-btn').disabled=!myTurn;
   $('pass-btn').hidden=state?.gameMode!=='go';
-  if(state?.gameMode==='go'&&state?.goPhase==='scoring'){$('pass-btn').hidden=false;$('pass-btn').disabled=!!state.scoreConfirm?.[myPid];$('pass-btn').textContent=state.scoreConfirm?.[myPid]?'✅ 已確認':'✅ 確認結算';}
-  else{$('pass-btn').textContent='⏸ 停一手';$('pass-btn').disabled=!myTurn||!!state?.winner;}
-  $('rematch-btn').disabled=!state?.winner;
+  if(state?.gameMode==='go'&&state?.goPhase==='scoring'){$('pass-btn').hidden=false;$('pass-btn').disabled=spectator||!!state.scoreConfirm?.[myPid];$('pass-btn').textContent=state.scoreConfirm?.[myPid]?'✅ 已確認':'✅ 確認結算';}
+  else{$('pass-btn').textContent='⏸ 停一手';$('pass-btn').disabled=spectator||!myTurn||!!state?.winner;}
+  $('rematch-btn').disabled=spectator||!state?.winner;
   $('rematch-btn').textContent=state?.mode==='ai'?(state?.winner?'🔁 再來一局':'🔁 再戰'):'🔁 再戰';
   $('sound-btn').textContent=`${soundOn?'🔊 音效：開':'🔇 音效：關'}`;
-  const chatDisabled=state?.mode!=='online'||state?.rps?.phase!=='done'||(!state?.turn&&state?.goPhase!=='scoring')||!!state?.winner;
+  $('actions-card').hidden=spectator;
+  const chatDisabled=state?.mode!=='online'||state?.rps?.phase!=='done'||(!state?.turn&&state?.goPhase!=='scoring')||!!state?.winner||spectator;
   $('chat-input').disabled=chatDisabled;$('chat-send').disabled=chatDisabled;
 }
 function renderChat(){
   const box=$('chat-messages'),messages=state?.chat||[];$('chat-count').textContent=messages.length?`${messages.length} 則`:'';
   box.innerHTML='';
   if(state?.mode==='ai'){const e=document.createElement('div');e.className='chat-empty';e.textContent='單人模式沒有對手聊天室。';box.appendChild(e);return}
+  if(state?.mode==='spectator'&&!messages.length){const e=document.createElement('div');e.className='chat-empty';e.textContent='觀戰模式：聊天室僅供閱讀。';box.appendChild(e);return}
   if(!messages.length){const e=document.createElement('div');e.className='chat-empty';e.textContent='和對手說點什麼吧。';box.appendChild(e);return}
   messages.forEach(m=>{const row=document.createElement('div');row.className='chat-row '+(m.pid===myPid?'mine':'');const av=document.createElement('div');av.className='chat-avatar avatar';paintAvatar(av,m.avatar);const wrap=document.createElement('div');wrap.className='chat-bubble-wrap';const name=document.createElement('div');name.className='chat-name';name.textContent=m.name||'玩家';const bubble=document.createElement('div');bubble.className='chat-bubble';bubble.textContent=m.text||'';wrap.append(name,bubble);row.append(av,wrap);box.appendChild(row)});
   box.scrollTop=box.scrollHeight;
@@ -269,7 +285,7 @@ function canMoveXQ(r1,c1,r2,c2,p){
 }
 function hints(r,c){const p=currentBoardCell(r,c),out=[];if(!p)return out;for(let rr=0;rr<10;rr++)for(let cc=0;cc<9;cc++)if(canMoveXQ(r,c,rr,cc,p))out.push([rr,cc,currentBoardCell(rr,cc)?'capture':'move']);return out;}
 function clickCell(r,c){
-  if(!state||state.winner||state.turn!==myColor)return;
+  if(!state||state.mode==='spectator'||state.winner||state.turn!==myColor)return;
   const g=state.gameMode;
   if(g==='xiangqi'){
     const p=currentBoardCell(r,c);
@@ -289,6 +305,27 @@ function clickCell(r,c){
     if(currentBoardCell(r,c))return;send({action:'move',r,c});playSound('move');
   }
 }
+
+function animateXiangqiMove(board,previousBoard,move){
+  if(!move||!move.from||!move.to||!previousBoard)return;
+  const r1=move.from[0]-1,c1=move.from[1]-1,r2=move.to[0]-1,c2=move.to[1]-1;
+  const src=previousBoard?.[r1]?.[c1];if(!src)return;
+  const layer=document.createElement('div');layer.className='motion-layer';board.appendChild(layer);
+  const rect=board.getBoundingClientRect(),x1=c1/8*rect.width,y1=r1/9*rect.height,x2=c2/8*rect.width,y2=r2/9*rect.height;
+  const dx=x2-x1,dy=y2-y1,dist=Math.hypot(dx,dy),angle=Math.atan2(dy,dx)*180/Math.PI;
+  const line=document.createElement('div');line.className='move-trace-line';line.style.left=`${x1}px`;line.style.top=`${y1}px`;line.style.width=`${dist}px`;line.style.transform=`rotate(${angle}deg) scaleX(0)`;layer.appendChild(line);
+  const piece=document.createElement('div');piece.className=`motion-piece ${src.t===src.t.toUpperCase()?'red':'black'}`;piece.textContent=CH[src.t]||'';layer.appendChild(piece);
+  const targetEl=board.querySelector(`.point[data-r="${r2}"][data-c="${c2}"]`);if(targetEl)targetEl.classList.add('anim-target');
+  const type=src.t.toLowerCase();
+  let duration=430,keyframes;
+  if(type==='c'&&move.captured){duration=650;const hop=-Math.min(26,Math.max(10,dist*.08));const nx=-dy/(dist||1)*hop,ny=dx/(dist||1)*hop;keyframes=[{transform:`translate(${x1}px,${y1}px) translate(-50%,-50%) rotate(0deg) scale(.94)`},{transform:`translate(${x1+dx*.45+nx}px,${y1+dy*.45+ny}px) translate(-50%,-50%) rotate(${angle+8}deg) scale(1.12)`},{transform:`translate(${x1+dx*.72-nx*.45}px,${y1+dy*.72-ny*.45}px) translate(-50%,-50%) rotate(${angle-5}deg) scale(1.06)`},{transform:`translate(${x2}px,${y2}px) translate(-50%,-50%) rotate(0deg) scale(1)`}]}
+  else if(type==='n'){duration=520;keyframes=[{transform:`translate(${x1}px,${y1}px) translate(-50%,-50%) scale(.92) rotate(-8deg)`},{transform:`translate(${x1+dx*.5}px,${y1+dy*.5-Math.min(18,dist*.05)}px) translate(-50%,-50%) scale(1.08) rotate(8deg)`},{transform:`translate(${x2}px,${y2}px) translate(-50%,-50%) scale(1) rotate(0deg)`}]}
+  else if(type==='p'){duration=300;keyframes=[{transform:`translate(${x1}px,${y1}px) translate(-50%,-50%) scale(.9)`},{transform:`translate(${x1+dx}px,${y1+dy}px) translate(-50%,-50%) scale(1.03)`},{transform:`translate(${x2}px,${y2}px) translate(-50%,-50%) scale(1)`}]}
+  else{duration=460;keyframes=[{transform:`translate(${x1}px,${y1}px) translate(-50%,-50%) scale(.98)`},{transform:`translate(${x2}px,${y2}px) translate(-50%,-50%) scale(1)`}]}
+  const anim=piece.animate(keyframes,{duration,easing:type==='c'&&move.captured?'cubic-bezier(.2,.85,.25,1)':'cubic-bezier(.22,.75,.28,1)',fill:'both'});
+  line.animate([{transform:`rotate(${angle}deg) scaleX(0)`,opacity:0},{transform:`rotate(${angle}deg) scaleX(1)`,opacity:.85},{transform:`rotate(${angle}deg) scaleX(.98)`,opacity:0}],{duration:Math.min(430,duration),easing:'ease-out',fill:'both'});
+  anim.finished.catch(()=>{}).finally(()=>{if(targetEl)targetEl.classList.remove('anim-target');layer.remove();});
+}
 function showCheck(ev){
   if(!ev||ev.id===lastCheckId)return;lastCheckId=ev.id;
   const o=$('check-overlay'),w=o.querySelector('.check-ink');$('check-target').textContent=ev.target==='red'?'紅方帥受到攻擊':'黑方將受到攻擊';o.hidden=false;w.classList.remove('ink-pop');void w.offsetWidth;w.classList.add('ink-pop');speakCheck();clearTimeout(checkTimer);checkTimer=setTimeout(()=>o.hidden=true,1500);
@@ -302,12 +339,14 @@ function copyText(t){navigator.clipboard?.writeText(t).then(()=>toast('已複製
 
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{selectedGameMode=b.dataset.mode;document.querySelectorAll('.game-mode').forEach(x=>x.classList.toggle('selected',x.dataset.mode===selectedGameMode));toast(`已選擇：${modeName(selectedGameMode)}`)});
 $('matchmaking-cancel').onclick=()=>send({action:'cancelMatchmake'});
+$('home-watch').onclick=()=>{const room=$('home-watch-room').value.trim().toUpperCase();if(!room)return toast('請先輸入觀戰碼','error');ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'watch',roomId:room,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
 $('home-match').onclick=startMatchmaking;
 $('home-online').onclick=()=>{ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'create',mode:selectedGameMode,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
 $('home-join').onclick=()=>{const room=$('home-room').value.trim().toUpperCase();if(!room)return toast('請先輸入房號','error');ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'join',roomId:room,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
 $('home-ai').onclick=()=>{ensureSavedProfile();const difficulty=$('home-difficulty').value;connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'ai',mode:selectedGameMode,name:profile.name,avatar:profile.avatar,profileId:profile.id,difficulty}):setTimeout(go,40);go()};
 $('back-home').onclick=$('game-home').onclick=()=>{try{ws?.close()}catch{}state=null;selected=null;myColor=null;myPid=null;hideRematchInvite();showScreen('home-screen');loadProfile()};
 $('copy-room').onclick=()=>copyText(state?.roomId||$('lobby-room').textContent);
+$('copy-watch').onclick=()=>copyText(state?.spectatorCode||state?.roomId||'');
 $('lobby-copy-share').onclick=()=>copyText(`來玩${modeName(state?.gameMode||selectedGameMode)} Online！房號：${state?.roomId||$('lobby-room').textContent}`);
 document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{send({action:'rps',choice:b.dataset.choice});playSound('select')});
 $('undo-btn').onclick=()=>send({action:'proposal',kind:'undo'});

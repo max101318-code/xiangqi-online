@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Board Arena Online</title>
-<link rel="stylesheet" href="style.css?v=3.0.0">
+<link rel="stylesheet" href="style.css?v=3.1.0">
 </head>
 <body>
 <div id="check-overlay" class="check-overlay" hidden aria-live="assertive"><div class="check-ink"><div class="check-word">將軍！</div><div id="check-target" class="check-target">黑將受到攻擊</div></div></div>
@@ -42,6 +42,7 @@
           <div class="ai-start"><select id="home-difficulty"><option value="easy">簡單</option><option value="normal" selected>普通</option><option value="hard">困難</option></select><button id="home-ai">開始遊戲</button></div>
         </div>
       </div>
+      <div class="mode-card watch-card"><b>👁 觀戰模式</b><span>輸入正在進行中的觀戰碼即可加入，不限中國象棋、五子棋或圍棋，也不會佔用玩家席位。</span><div class="watch-start"><input id="home-watch-room" maxlength="6" placeholder="輸入觀戰碼"><button id="home-watch">進入觀戰</button></div></div>
       <div class="stats-card stats-card-wide" aria-label="我的總戰績">
         <div><span>總場</span><b id="stat-games">0</b></div><div><span>勝場</span><b id="stat-wins">0</b></div><div><span>敗場</span><b id="stat-losses">0</b></div><div><span>和棋</span><b id="stat-draws">0</b></div><div><span>勝率</span><b id="stat-rate">0%</b></div>
       </div>
@@ -68,17 +69,17 @@
 </div>
 
 <div id="game-screen" class="screen" hidden>
-  <header class="screen-header game-header"><button id="game-home" class="ghost">← 首頁</button><div><div class="eyebrow" id="game-eyebrow">MATCH</div><h2 id="game-title">中國象棋 <span>Online</span></h2></div><div id="game-room-meta" class="top-meta"></div></header>
+  <header class="screen-header game-header"><button id="game-home" class="ghost">← 首頁</button><div><div class="eyebrow" id="game-eyebrow">MATCH</div><h2 id="game-title">中國象棋 <span>Online</span></h2></div><div class="game-meta-actions"><div id="game-room-meta" class="top-meta"></div><button id="copy-watch" class="small-btn" hidden>👁 複製觀戰碼</button></div></header>
   <section class="game-toolbar"><div class="player-chip"><div id="you-avatar" class="avatar">🧑🏻</div><div><b id="you-name">玩家</b><span id="you-side">—</span></div></div><div class="turn-box"><div>回合倒數</div><b id="countdown">30</b><small>秒</small></div><div class="player-chip opponent"><div id="opp-avatar" class="avatar">🤖</div><div><b id="opp-name">電腦</b><span id="opp-side">—</span></div></div></section>
   <section class="game-layout">
     <div class="board-area"><div class="board-shell"><div id="board" aria-label="遊戲棋盤"><div id="board-points"></div></div></div><div id="turn-message" class="turn-message">等待開始…</div><div id="legend" class="legend"><span>點棋子後再點目的地</span></div></div>
     <aside class="game-side">
       <div class="panel-card"><div class="panel-head"><h3>對局紀錄</h3><span id="move-count">0 手</span></div><div id="history" class="history"></div></div>
-      <div class="panel-card actions-card"><h3>對局控制</h3><div class="action-grid"><button id="undo-btn">↩ 悔棋</button><button id="draw-btn">🤝 求和</button><button id="pass-btn" hidden>⏸ 停一手</button><button id="resign-btn">🏳️ 投降</button><button id="rematch-btn">🔁 再戰</button><button id="sound-btn">🔊 音效：開</button></div></div>
+      <div id="actions-card" class="panel-card actions-card"><h3>對局控制</h3><div class="action-grid"><button id="undo-btn">↩ 悔棋</button><button id="draw-btn">🤝 求和</button><button id="pass-btn" hidden>⏸ 停一手</button><button id="resign-btn">🏳️ 投降</button><button id="rematch-btn">🔁 再戰</button><button id="sound-btn">🔊 音效：開</button></div></div>
       <div class="panel-card chat-card"><div class="panel-head"><h3>💬 對局聊天室</h3><span id="chat-count">0</span></div><div id="chat-messages" class="chat-messages"><div class="chat-empty">進入雙人對局後可以和對手聊天。</div></div><div class="chat-compose"><input id="chat-input" maxlength="200" placeholder="輸入訊息…"><button id="chat-send">送出</button></div></div>
       <div id="game-notice" class="mini-notice"></div>
     </aside>
   </section>
 </div>
-<script src="app.js?v=3.0.0"></script>
+<script src="app.js?v=3.1.0"></script>
 </body></html>
