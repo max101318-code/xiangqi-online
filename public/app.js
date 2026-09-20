@@ -311,9 +311,9 @@ function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
   const art=document.createElement('img');
   art.className='checker-reference-image';
-  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.9';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.10';
   art.alt='跳棋棋盤';art.draggable=false;
-  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.9';}};
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.10';}};
   board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){

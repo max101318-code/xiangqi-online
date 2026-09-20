@@ -249,7 +249,6 @@ const CHECKER_CAMPS=[
 const CHECKER_COLOR_LABELS={red:'紅色',blue:'藍色',green:'綠色'};
 const CHECKER_COLOR_ARM={green:0,blue:2,red:4};
 const CHECKER_COLORS=['red','blue','green'];
-CHECKER_CAMP_DISTANCES=buildCheckerCampDistances();
 function checkerColorLabel(c){return CHECKER_COLOR_LABELS[c]||'待定';}
 function checkerArm(di){return (CHECKER_CAMPS[di]||[]).slice();}
 function checkerCamps(count){return CHECKER_CAMPS.map(c=>c.slice());}
@@ -317,6 +316,7 @@ function buildCheckerCampDistances(){
   return result;
 }
 let CHECKER_CAMP_DISTANCES=[];
+CHECKER_CAMP_DISTANCES=buildCheckerCampDistances();
 
 function checkerNeighbors(id){return CHECKER_GRAPH.neighbors[id]||[];}
 function checkerJumpTargets(id){return (CHECKER_GRAPH.jumps[id]||[]).map(x=>x.to);}
@@ -1239,4 +1239,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.9 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.10 multi-game on ${PORT}`));
