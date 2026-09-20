@@ -1,4 +1,4 @@
-# 棋戰 Online v2.8
+# 棋戰 Online v2.8.1
 
 同一個網站支援：
 - 中國象棋
@@ -59,3 +59,7 @@ GitHub 更新後，Render 可自動部署。
 
 ## 注意
 玩家資料與戰績目前存在瀏覽器 `localStorage`，不是雲端會員資料庫；換裝置或清除網站資料後不會同步。
+
+
+## v2.8.1 修正
+修正建立房間與人機模式使用了不存在的 `roomId()` 函式，改用伺服器既有的 `rid()`；避免 WebSocket 收到建立/人機請求時造成 `ReferenceError: roomId is not defined`，導致 Render 502。
