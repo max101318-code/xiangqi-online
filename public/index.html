@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Board Arena Online</title>
-<link rel="stylesheet" href="style.css?v=3.1.0">
+<link rel="stylesheet" href="style.css?v=3.2.0">
 </head>
 <body>
 <div id="check-overlay" class="check-overlay" hidden aria-live="assertive"><div class="check-ink"><div class="check-word">將軍！</div><div id="check-target" class="check-target">黑將受到攻擊</div></div></div>
@@ -12,7 +12,7 @@
 <div id="rematch-panel" class="floating-invite" hidden><div><strong id="rematch-title">對方邀你進行下一場</strong><span>接受後會重新猜拳。</span></div><div><button id="accept-rematch" class="primary">接受</button><button id="reject-rematch">暫不</button></div></div>
 
 <div id="home-screen" class="screen">
-  <header class="site-header"><div><div class="eyebrow">BOARD ARENA · ONLINE</div><h1>棋局 <span>Online</span></h1><p>中國象棋、五子棋、圍棋，同一個玩家資料與戰績。</p></div><div class="status-pill">● ONLINE</div></header>
+  <header class="site-header"><div><div class="eyebrow">BOARD ARENA · ONLINE</div><h1>棋局 <span>Online</span></h1><p>中國象棋、五子棋、圍棋、明棋、暗棋與多人跳棋，同一個玩家資料與戰績。</p></div><div class="status-pill">● ONLINE</div></header>
   <section class="hero-grid">
     <div class="hero-card">
       <div class="hero-kicker">你的棋士名片</div>
@@ -33,16 +33,20 @@
         <button class="game-mode selected" data-mode="xiangqi">♟ 中國象棋</button>
         <button class="game-mode" data-mode="gomoku">⚫ 五子棋</button>
         <button class="game-mode" data-mode="go">● 圍棋</button>
+        <button class="game-mode" data-mode="banqi">🀄 明棋</button>
+        <button class="game-mode" data-mode="darkbanqi">🀄 暗棋連吃</button>
+        <button class="game-mode" data-mode="checkers">🔵 多人跳棋</button>
       </div>
       <div class="mode-grid">
         <div class="mode-card primary"><b>👥 雙人對戰</b><span>可以建立房間、輸入房號，或使用快速匹配。</span>
           <div class="online-start"><button id="home-match" class="match-btn">⚡ 快速匹配</button><button id="home-online">建立房間</button><input id="home-room" maxlength="6" placeholder="輸入房號"><button id="home-join">加入房間</button></div>
+          <div id="checkers-player-wrap" class="checkers-player-wrap" hidden><label>跳棋人數</label><select id="checkers-player-count"><option value="2">2 人</option><option value="3">3 人</option><option value="4">4 人</option><option value="6">6 人</option></select></div>
         </div>
         <div class="mode-card"><b>🤖 單人對電腦</b><span>所選遊戲可以直接與 AI 對局。</span>
           <div class="ai-start"><select id="home-difficulty"><option value="easy">簡單</option><option value="normal" selected>普通</option><option value="hard">困難</option></select><button id="home-ai">開始遊戲</button></div>
         </div>
       </div>
-      <div class="mode-card watch-card"><b>👁 觀戰模式</b><span>輸入正在進行中的觀戰碼即可加入，不限中國象棋、五子棋或圍棋，也不會佔用玩家席位。</span><div class="watch-start"><input id="home-watch-room" maxlength="6" placeholder="輸入觀戰碼"><button id="home-watch">進入觀戰</button></div></div>
+      <div class="mode-card watch-card"><b>👁 觀戰模式</b><span>輸入正在進行中的觀戰碼即可加入，不限遊戲模式，也不會佔用玩家席位。</span><div class="watch-start"><input id="home-watch-room" maxlength="6" placeholder="輸入觀戰碼"><button id="home-watch">進入觀戰</button></div></div>
       <div class="stats-card stats-card-wide" aria-label="我的總戰績">
         <div><span>總場</span><b id="stat-games">0</b></div><div><span>勝場</span><b id="stat-wins">0</b></div><div><span>敗場</span><b id="stat-losses">0</b></div><div><span>和棋</span><b id="stat-draws">0</b></div><div><span>勝率</span><b id="stat-rate">0%</b></div>
       </div>
@@ -81,5 +85,5 @@
     </aside>
   </section>
 </div>
-<script src="app.js?v=3.1.0"></script>
+<script src="app.js?v=3.2.0"></script>
 </body></html>
