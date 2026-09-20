@@ -414,9 +414,10 @@ function clickCell(r,c){
       return;
     }
     if(chainActive){
-      if(p?.color===myColor||!p){send({action:'stopChain'});selected=null;renderBoard();return;}
+      // 連吃中：點任何鄰近／炮可飛到的位置都送 capture；伺服器負責判定。
+      // 暗棋若碰到未翻開己方棋，伺服器會揭露並讓攻擊棋留在原位。
       send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});
-      selected=null;playSound('capture');renderBoard();return;
+      selected=null;playSound(p?.color===myColor?'select':'capture');renderBoard();return;
     }
     if(!p){
       send({action:'move',subaction:'move',r:selected[0],c:selected[1],toR:r,toC:c});

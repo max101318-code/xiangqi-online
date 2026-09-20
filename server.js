@@ -115,75 +115,110 @@ function banqiEndsIfWon(x,p){
   return false;
 }
 function applyBanqi(x,p,m){
-  const g=x.g;if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.pid)return{error:'還沒輪到你'};
+  const g=x.g;
+  if(g.winner)return{error:'遊戲已結束'};
+  if(g.turn!==p.pid)return{error:'還沒輪到你'};
   if(g.turnDeadline&&Date.now()>g.turnDeadline){timeOut(x);return{error:'回合時間已到'}};
-  const r=+m.r,c=+m.c;if(r<0||r>=BANQI_ROWS||c<0||c>=BANQI_COLS)return{error:'位置超出棋盤'};
+  const r=+m.r,c=+m.c;
+  if(r<0||r>=BANQI_ROWS||c<0||c>=BANQI_COLS)return{error:'位置超出棋盤'};
   const cell=g.board[r]?.[c];
 
+  // 翻棋：只翻一顆，翻完立即換手。
   if(m.action==='flip'){
-    if(!cell)return{error:'這裡沒有棋子'};if(cell.revealed)return{error:'這顆棋已經翻開'};
+    if(!cell)return{error:'這裡沒有棋子'};
+    if(cell.revealed)return{error:'這顆棋已經翻開'};
     cell.revealed=true;
     if(!p.color){
+      p.color=cell.color;
       if(p.pid==='ai'){
-        p.color=cell.color;
         x.aiColor=cell.color;
-        const other=x.players.find(q=>q.pid!==p.pid);
-        if(other) other.color=banqiOppColor(cell.color);
+        const other=x.players.find(q=>q.pid!==p.pid);if(other)other.color=banqiOppColor(cell.color);
+      }else if(x.ai){
+        x.aiColor=banqiOppColor(cell.color);
+        const other=x.players.find(q=>q.pid!==p.pid);if(other)other.color=banqiOppColor(cell.color);
       }else{
-        p.color=cell.color;
-        if(x.ai){
-          x.aiColor=banqiOppColor(cell.color);
-        }else{
-          const other=x.players.find(q=>q.pid!==p.pid);
-          if(other) other.color=banqiOppColor(cell.color);
-        }
+        const other=x.players.find(q=>q.pid!==p.pid);if(other)other.color=banqiOppColor(cell.color);
       }
     }
     g.history.push({n:g.move,color:p.color||cell.color,move:'翻棋',at:[r+1,c+1],piece:banqiLabel(cell)});g.move++;
-    g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+    g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);
+    return{ok:true};
   }
 
-  if(!cell||!cell.revealed)return{error:'這裡不是已翻開的棋子'};
-  if(cell.color!==p.color)return{error:'只能使用自己的已翻開棋子'};
-  const toR=+m.toR,toC=+m.toC;if(toR<0||toR>=BANQI_ROWS||toC<0||toC>=BANQI_COLS)return{error:'目的地超出棋盤'};
+  // 只有已翻開的己方棋子才能作為攻擊者。
+  const attacker=g.board[r]?.[c];
+  if(!attacker||!attacker.revealed)return{error:'起點必須是自己已翻開的棋子'};
+  if(attacker.color!==p.color)return{error:'只能使用自己的已翻開棋子'};
+  const toR=+m.toR,toC=+m.toC;
+  if(toR<0||toR>=BANQI_ROWS||toC<0||toC>=BANQI_COLS)return{error:'目的地超出棋盤'};
   const target=g.board[toR]?.[toC];
 
   if(m.action==='move'){
     if(!banqiAdjacent(r,c,toR,toC))return{error:'移動只能上下左右一格'};
     if(target)return{error:'目標格已有棋子'};
     if(g.chain?.pid===p.pid)return{error:'連吃中不能普通移動，請吃棋或停止連吃'};
-    const before=clone(g);g.board[toR][toC]=cell;g.board[r][c]=null;
-    g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1]});g.move++;x.undoStack.push(before);
+    const before=clone(g);
+    g.board[toR][toC]=attacker;g.board[r][c]=null;
+    g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1]});g.move++;x.undoStack.push(before);
     g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
   }
 
   if(m.action==='capture'){
     if(!target)return{error:'目標沒有棋子'};
+
+    // 暗棋連吃的特殊規則：碰到未翻開的棋時先揭露。
+    // 1) 未翻開己方棋：揭露它，原攻擊棋不移動，立即結束連吃並換手。
+    // 2) 未翻開敵棋且比攻擊棋大：揭露它，原攻擊棋不移動，立即中斷連吃並換手。
+    // 3) 未翻開敵棋且可吃：才真正吃掉，攻擊棋移到目標格。
     const wasCovered=!target.revealed;
     if(x.mode==='banqi'&&wasCovered)return{error:'明棋不能吃未翻開的暗棋'};
-    const testTarget=wasCovered?Object.assign({},target,{revealed:true}):target;
-    if(!banqiCaptureRule(cell,testTarget,g.board,r,c,toR,toC)){
-      if(x.mode==='darkbanqi'&&wasCovered&&cell.type!=='cannon'&&!banqiCanEat(cell,testTarget)){
-        target.revealed=true;
-        g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
+    if(x.mode==='darkbanqi'&&wasCovered){
+      target.revealed=true;
+      if(target.color===p.color){
+        g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blockedByFriend:true});
+        g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+      }
+      // 暗棋的炮依然是特殊棋：對已翻開目標可跨子吃；但踩到未翻開且目標階級更大時仍依規格中斷連吃。
+      if(attacker.type!=='cannon'&&BANQI_RANK[target.type]>BANQI_RANK[attacker.type]){
+        g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
+        g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+      }
+      if(attacker.type==='cannon'&&BANQI_RANK[target.type]>BANQI_RANK[attacker.type]){
+        // 炮仍需隔一子才可能飛吃；若不滿足炮架規則，保持原地並換手。
+        if(!banqiCaptureRule(attacker,target,g.board,r,c,toR,toC)){
+          g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
+          g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+        }
+      }
+    }
+
+    if(!banqiCaptureRule(attacker,target,g.board,r,c,toR,toC)){
+      // 暗棋：如果是未翻開敵棋但不能吃，也必須停在原地；棋子本身不移動。
+      if(x.mode==='darkbanqi'&&wasCovered){
+        g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
         g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
       }
       return{error:'這顆棋不能吃目標棋子'};
     }
-    const before=clone(g);g.board[toR][toC]=cell;g.board[r][c]=null;
+
+    const before=clone(g);
+    g.board[toR][toC]=attacker;g.board[r][c]=null;
+    g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],captured:banqiLabel(target),coveredTarget:wasCovered});g.move++;x.undoStack.push(before);
+
+    if(banqiEndsIfWon(x,p))return{ok:true};
     if(x.mode==='darkbanqi'){
-      g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],captured:banqiLabel(target),coveredTarget:wasCovered});g.move++;x.undoStack.push(before);
-      if(banqiEndsIfWon(x,p))return{ok:true};
+      // 成功吃到同階／較小敵棋後，才進入連吃；若沒有下一個合法吃法才換手。
       g.chain={pid:p.pid,r:toR,c:toC,captures:(g.chain?.captures||0)+1};
-      if(!hasBanqiChainCapture(x,p.pid,toR,toC)){g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);}else setTurnDeadline(x);
+      if(!hasBanqiChainCapture(x,p.pid,toR,toC)){
+        g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);
+      }else setTurnDeadline(x);
       return{ok:true};
     }
-    g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],captured:banqiLabel(target)});g.move++;x.undoStack.push(before);
-    if(banqiEndsIfWon(x,p))return{ok:true};
     g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
   }
   return{error:'未知動作'};
 }
+
 function hasBanqiChainCapture(x,pid,r,c){
   const p=banqiPlayerByPid(x,pid);if(!p?.color)return false;const att=x.g.board[r]?.[c];if(!att)return false;
   for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
@@ -371,6 +406,7 @@ function applyCheckersRpsResult(x,result){
 function nameByPid(x,id){return id==='ai'?'電腦':x.players.find(p=>p.pid===id)?.name||'玩家';}
 function aiChooseCheckerColor(x){
   if(!x.ai||x.rps?.phase!=='choose-color'||x.rps.colorTurnPid!=='ai')return;
+  // AI 選色冪等保護：如果前一次排程晚到，重新檢查目前真正的選色輪次。
   const choices=Object.keys(x.rps.colorChoices||{});
   const color=CHECKER_COLORS.find(c=>!choices.includes(c))||'red';
   x.rps.colorChoices[color]='ai';
@@ -671,12 +707,33 @@ function confirmGoScore(x,p){
   if(x.players.length===2&&x.players.every(q=>g.scoreConfirm[q.pid]))finalizeGoScore(x);
   return{ok:true};
 }
+function aiProgressTick(x){
+  if(!x?.ai||x.g?.winner)return;
+  if(x.rps?.phase==='rps'){
+    if(!x.rps.choices?.ai) aiExtraRpsChoose(x);
+    return;
+  }
+  if(x.rps?.phase==='choose-color' && x.mode==='checkers' && x.rps.colorTurnPid==='ai'){
+    aiChooseCheckerColor(x);
+    return;
+  }
+  if(x.rps?.phase==='done' && x.g?.turn==='ai') aiTurn(x);
+}
+function armAIWatchdog(x){
+  if(!x?.ai)return;
+  clearTimeout(x.aiWatchdogTimer);
+  const tick=()=>{
+    x.aiWatchdogTimer=setTimeout(()=>{aiProgressTick(x);if(!x.g.winner)tick();},700);
+  };
+  tick();
+}
 function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
   mode=normalizeMode(mode);
   const cap=mode==='checkers'?(maxPlayers===3?3:2):2;
-  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0};
+  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null};
   if(isBanqi(mode))initBanqiBoard(x.g);
   if(mode==='checkers')x.g.holes=CHECKER_HOLES;
+  if(ai)armAIWatchdog(x);
   rooms.set(x.id,x);return x;
 }
 function playerList(x){return x.players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null,connected:p.connected!==false,camp:p.camp||null,targetCamp:p.targetCamp||null})).concat(x.ai?[{pid:'ai',name:'電腦',avatar:'🤖',color:x.mode==='xiangqi'?'black':x.mode==='checkers'?(x.aiColor||'blue'):(x.aiColor||'white'),connected:true,camp:x.mode==='checkers'?(x.aiCamp||null):null,targetCamp:x.mode==='checkers'?(x.aiTargetCamp||null):null}]:[]);}
@@ -862,6 +919,8 @@ function aiCheckersMove(x){
 }
 function aiTurn(x){
   if(!x.ai||x.g.winner)return;
+  // 防止同一回合被多個延遲任務重入。只要輪到 AI，就重新從當前盤面產生合法動作。
+  x.aiTurnStartedAt=Date.now();
   if(isBanqi(x.mode)){
     if(x.g.turn!=='ai')return;
     const res=aiBanqiAction(x);
@@ -945,6 +1004,7 @@ wss.on('connection',ws=>{
     }else if(m.action==='ai'){
       const mode=normalizeMode(m.mode),difficulty=normalizeDifficulty(m.difficulty);x=createRoom(mode,false,true,2);x.difficulty=difficulty;
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
+      armAIWatchdog(x);
       if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){initBanqiBoard(x.g);x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;}
       send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
       if(isExtraMode(mode))setTimeout(()=>aiExtraRpsChoose(x),500);
@@ -956,7 +1016,8 @@ wss.on('connection',ws=>{
       send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});
       broadcast(x);
     }else if(!x||!p)return;
-    else if(p.role==='spectator'){
+    else if(x?.ai)clearTimeout(x.aiWatchdogTimer);
+    if(p.role==='spectator'){
       if(m.action==='leaveWatch'){x.spectators=x.spectators.filter(q=>q!==p);x=x;send(p,{type:'left-watch'});if(!x.players.length&&!x.spectators.length)rooms.delete(x.id);}
       else if(m.action==='chat')send(p,{type:'error',message:'觀戰模式目前僅能觀看，不能發送聊天訊息。'});
       else return;
@@ -970,7 +1031,7 @@ wss.on('connection',ws=>{
       if(!['剪刀','石頭','布'].includes(m.choice))return send(p,{type:'error',message:'猜拳選項無效'});
       if(x.rps.choices[p.pid])return send(p,{type:'error',message:'你本輪已經出拳，請等待結果'});
       x.rps.choices[p.pid]=m.choice;resolveAiExtraRps(x);broadcast(x);
-    }else if(m.action==='chooseColor'&&x.mode==='checkers'){const e=chooseCheckerColor(x,p,String(m.color));if(e)send(p,{type:'error',message:e});else {broadcast(x);if(x.ai&&x.rps.phase==='choose-color'&&x.rps.colorTurnPid==='ai')setTimeout(()=>aiChooseCheckerColor(x),350);}}else if(m.action==='chooseColor'&&!x.ai&&!isExtraMode(x.mode)){const e=chooseColor(x,p,m.color);if(e)send(p,{type:'error',message:e});else broadcast(x);}
+    }else if(m.action==='chooseColor'&&x.mode==='checkers'){const e=chooseCheckerColor(x,p,String(m.color));if(e)send(p,{type:'error',message:e});else {broadcast(x);if(x.ai&&x.rps.phase==='choose-color'&&x.rps.colorTurnPid==='ai')setTimeout(()=>aiChooseCheckerColor(x),150);}}else if(m.action==='chooseColor'&&!x.ai&&!isExtraMode(x.mode)){const e=chooseColor(x,p,m.color);if(e)send(p,{type:'error',message:e});else broadcast(x);}
     else if(m.action==='chat'){
       if(x.ai)return send(p,{type:'error',message:'單人模式沒有聊天室'});if(!isExtraMode(x.mode)&&x.rps?.phase!=='done')return send(p,{type:'error',message:'目前無法聊天'});if(!x.g.turn||x.g.winner)return send(p,{type:'error',message:'目前無法聊天'});
       const text=String(m.text||'').trim().slice(0,200);if(!text)return;x.chat.push({pid:p.pid,name:p.name,avatar:p.avatar,text,ts:Date.now()});if(x.chat.length>100)x.chat=x.chat.slice(-100);broadcast(x);
@@ -1007,6 +1068,7 @@ wss.on('connection',ws=>{
       const inv=x.rematchInvite;if(!inv||inv.toPid!==p.pid)return send(p,{type:'error',message:'沒有等待中的再戰邀請'});x.rematchInvite=null;if(m.accept){resetOnlineRound(x);broadcast(x);}else{const inviter=x.players.find(q=>q.pid===inv.fromPid);if(inviter)send(inviter,{type:'notice',message:`${p.name} 暫時不進行下一場。`});broadcast(x);}
     }else if(m.action==='aiRematch'&&x.ai){
       x.g=newGame(x.mode);
+      armAIWatchdog(x);
       x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;
       x.rps=newRps();
       if(isBanqi(x.mode)){
