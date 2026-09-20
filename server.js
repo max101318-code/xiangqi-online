@@ -246,6 +246,18 @@ const CHECKER_CAMPS=[
   ['h120','h115','h118','h105','h112','h116','h98','h103','h108','h109','h90','h94','h99','h101','h106'],
   ['h64','h53','h72','h47','h62','h79','h38','h54','h70','h85','h34','h44','h59','h78','h90']
 ];
+// 每個外側三角形靠近中央黃色六邊形的第一排 5 孔。
+// 規則：非自己的目標營地，若是別人的家，只允許落在這 5 孔；
+// 自己的目標營地則可完整進入 15 孔。
+const CHECKER_FRONT_ROWS=[
+  ['h14','h19','h25','h27','h34'],
+  ['h14','h18','h22','h26','h30'],
+  ['h30','h43','h61','h73','h88'],
+  ['h88','h91','h96','h102','h106'],
+  ['h90','h94','h99','h101','h106'],
+  ['h34','h44','h59','h78','h90']
+];
+const CHECKER_FRONT_ROW_SET=CHECKER_FRONT_ROWS.map(row=>new Set(row));
 const CHECKER_COLOR_LABELS={red:'紅色',blue:'藍色',green:'綠色'};
 const CHECKER_COLOR_ARM={green:0,blue:2,red:4};
 const CHECKER_COLORS=['red','blue','green'];
@@ -343,17 +355,42 @@ function checkerInit(x){
   return Object.keys(board).length>0;
 }
 function checkerActivePlayers(x){return [...x.players.filter(p=>p.connected!==false),...(x.ai?[{pid:'ai',color:x.aiColor||'blue',connected:true}]:[])];}
-function checkerCanStep(x,pid,from,to){const n=checkerNeighbors(from);if(!n.includes(to)||x.g.board[to])return false;return CHECKER_HOLE_SET.has(to);}
-function checkerCanJump(x,from,to){
+function checkerDestinationAllowed(x,pid,to){
+  const hole=CHECKER_HOLES.find(h=>h.id===to);
+  if(!hole)return false;
+  // 中央黃色六邊形／公共區域與其邊界可正常停留。
+  const camp=hole.camp;
+  if(camp==null || camp<0)return true;
+  const p=checkerPlayerByPid(x,pid);
+  if(!p)return false;
+
+  // 自己的起始家可以進出；自己的目標家可以完整落入。
+  if((p.camp||[]).includes(to) || (p.targetCamp||[]).includes(to))return true;
+
+  // 別人的家：只允許踩到靠近中央黃色六邊形的第一排 5 個位置，
+  // 不能再深入後面的 10 個孔。
+  for(const q of checkerActivePlayers(x)){
+    if(q.pid===p.pid || !q.color)continue;
+    if((q.camp||[]).includes(to)){
+      const arm=CHECKER_COLOR_ARM[q.color];
+      return arm!=null && CHECKER_FRONT_ROW_SET[arm]?.has(to);
+    }
+  }
+  return false;
+}
+function checkerCanStep(x,pid,from,to){const n=checkerNeighbors(from);if(!n.includes(to)||x.g.board[to])return false;return CHECKER_HOLE_SET.has(to)&&checkerDestinationAllowed(x,pid,to);}
+function checkerCanJump(x,from,to,pid=null){
   const jump=(CHECKER_GRAPH.jumps[from]||[]).find(j=>j.to===to);
-  return !!jump && !!x.g.board[jump.mid] && !x.g.board[to];
+  if(!jump || !x.g.board[jump.mid] || x.g.board[to])return false;
+  if(pid!=null&&!checkerDestinationAllowed(x,pid,to))return false;
+  return true;
 }
 function checkerHasAnyMove(x,pid){
   const p=checkerPlayerByPid(x,pid);if(!p)return false;
   for(const [id,occ] of Object.entries(x.g.board)){
     if(occ!==p.color)continue;
     for(const n of checkerNeighbors(id))if(checkerCanStep(x,pid,id,n))return true;
-    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to))return true;
+    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to,pid))return true;
   }
   return false;
 }
@@ -365,7 +402,7 @@ function applyCheckers(x,p,m){
   if(g.board[from]!==color)return{error:'只能移動自己的棋子'};if(g.board[to])return{error:'目標位置已有棋子'};if(!CHECKER_HOLE_SET.has(from)||!CHECKER_HOLE_SET.has(to))return{error:'無效棋孔'};
   const chain=g.chain&&g.chain.pid===p.pid;
   if(chain&&from!==g.chain.pos)return{error:'連跳中必須使用同一顆棋子'};
-  let kind=checkerCanStep(x,p.pid,from,to)?'step':checkerCanJump(x,from,to)?'jump':null;
+  let kind=checkerCanStep(x,p.pid,from,to)?'step':checkerCanJump(x,from,to,p.pid)?'jump':null;
   if(chain&&kind!=='jump')kind=null;
   if(!kind)return{error:chain?'連跳只能再跳躍，或按「停止連跳」':'只能單步或等距跳躍'};
 
@@ -1088,7 +1125,7 @@ function aiCheckersMove(x){
     }
     for(const to of checkerJumpTargets(id)){
       if(chainPos&&to===forbiddenBack)continue;
-      if(!checkerCanJump(x,id,to))continue;
+      if(!checkerCanJump(x,id,to,'ai'))continue;
       const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
       const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
       let score=85+progress*36+Math.random()*2;
@@ -1303,4 +1340,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.11 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.15 multi-game on ${PORT}`));
