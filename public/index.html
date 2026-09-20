@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Board Arena Online</title>
-<link rel="stylesheet" href="style.css?v=3.3.0">
+<link rel="stylesheet" href="style.css?v=3.3.1">
 </head>
 <body>
 <div id="check-overlay" class="check-overlay" hidden aria-live="assertive"><div class="check-ink"><div class="check-word">將軍！</div><div id="check-target" class="check-target">黑將受到攻擊</div></div></div>
@@ -75,6 +75,7 @@
 <div id="game-screen" class="screen" hidden>
   <header class="screen-header game-header"><button id="game-home" class="ghost">← 首頁</button><div><div class="eyebrow" id="game-eyebrow">MATCH</div><h2 id="game-title">中國象棋 <span>Online</span></h2></div><div class="game-meta-actions"><div id="game-room-meta" class="top-meta"></div><button id="copy-watch" class="small-btn" hidden>👁 複製觀戰碼</button></div></header>
   <section class="game-toolbar"><div class="player-chip"><div id="you-avatar" class="avatar">🧑🏻</div><div><b id="you-name">玩家</b><span id="you-side">—</span></div></div><div class="turn-box"><div>回合倒數</div><b id="countdown">30</b><small>秒</small></div><div class="player-chip opponent"><div id="opp-avatar" class="avatar">🤖</div><div><b id="opp-name">電腦</b><span id="opp-side">—</span></div></div></section>
+  <section id="ai-rps-panel" class="ai-rps-panel" hidden><div><h3>✊✌️🖐️ 猜拳決定先手</h3><p id="ai-rps-status">請出拳，和電腦決定先手。</p></div><div class="choice-row"><button data-ai-rps-choice="剪刀">✌️ 剪刀</button><button data-ai-rps-choice="石頭">✊ 石頭</button><button data-ai-rps-choice="布">🖐️ 布</button></div></section>
   <section class="game-layout">
     <div class="board-area"><div class="board-shell"><div id="board" aria-label="遊戲棋盤"><div id="board-points"></div></div></div><div id="turn-message" class="turn-message">等待開始…</div><div id="legend" class="legend"><span>點棋子後再點目的地</span></div></div>
     <aside class="game-side">
@@ -85,5 +86,5 @@
     </aside>
   </section>
 </div>
-<script src="app.js?v=3.3.0"></script>
+<script src="app.js?v=3.3.1"></script>
 </body></html>

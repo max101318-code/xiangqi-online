@@ -184,8 +184,9 @@ function isMyTurn(){if(!state||state.mode==='spectator'||state.winner)return fal
 function newModeCapacity(){return state?.gameMode==='checkers'?(Number(state?.maxPlayers)||2):2;}
 function renderState(previousBoard=null,previousHistory=[]){
   if(!state)return;
-  const needsLobby=(state.mode==='online'&&(!isExtraMode(state.gameMode)&&state.rps?.phase!=='done'||isExtraMode(state.gameMode)&&state.rps?.phase!=='done'))||(state.mode==='online'&&isExtraMode(state.gameMode)&&!state.started)||(state.mode==='ai'&&isExtraMode(state.gameMode)&&state.rps?.phase!=='done');
+  const needsLobby=(state.mode==='online' && (state.rps?.phase!=='done' || (isExtraMode(state.gameMode)&&!state.started)));
   if(needsLobby){showScreen('lobby-screen');updateLobby();return;}
+  // AI 對局（包含明棋、暗棋連吃、多人跳棋）直接留在棋局畫面；猜拳在棋局畫面上完成，不再跳進建立房間大廳。
   showScreen('game-screen');
   const g=state.gameMode||'xiangqi';
   $('game-eyebrow').textContent=`${modeName(g)} · ${state.mode==='ai'?'AI 對局':state.mode==='spectator'?'👁 觀戰模式':'ONLINE 對局'}`;
@@ -200,10 +201,21 @@ function renderState(previousBoard=null,previousHistory=[]){
   paintAvatar($('opp-avatar'),opp?.avatar||'❔');$('opp-name').textContent=opp?.name||'等待對手';$('opp-side').textContent=sideName(opp?.color,g);
   $('copy-watch').hidden=!state.spectatorCode;
   if(state.spectatorCode)$('copy-watch').textContent=isSpectator?'複製觀戰碼':'👁 複製觀戰碼';
-  renderBoard(previousBoard,previousHistory);renderHistory();renderTurn();updateCountdown();updateActions();renderChat();
-  $('game-notice').textContent=g==='xiangqi'?'將軍會顯示 1.5 秒毛筆字並播放機械音。':g==='gomoku'?'15×15 五連取勝；三種 AI 難度可選。':'19×19 圍棋：19路、氣、提子、自殺禁著、全盤同形禁重複、兩次停手進入終局結算。';
+  renderBoard(previousBoard,previousHistory);renderHistory();renderTurn();updateCountdown();updateActions();renderChat();updateAiRpsPanel();
+  $('game-notice').textContent=g==='xiangqi'?'將軍會顯示 1.5 秒毛筆字並播放機械音。':g==='gomoku'?'15×15 五連取勝；三種 AI 難度可選。':g==='go'?'19×19 圍棋：19路、氣、提子、自殺禁著、全盤同形禁重複、兩次停手進入終局結算。':g==='banqi'?'4×8 明棋：翻、走、吃，每回合只能做一種動作。':g==='darkbanqi'?'4×8 暗棋連吃：可連續吃棋並自行停止。':'多人跳棋：可走一步或等距跳躍，跳過的棋子不會被吃掉。';
 
   if(g==='go'&&state.score){$('game-notice').textContent=`終局：黑 ${Number(state.score.black).toFixed(2)} · 白 ${Number(state.score.white).toFixed(2)}；點選標記死棋並雙方確認。`;}
+}
+function updateAiRpsPanel(){
+  const panel=$('ai-rps-panel');if(!panel)return;
+  const active=state?.mode==='ai'&&isExtraMode(state?.gameMode)&&state?.rps?.phase==='rps'&&!state?.winner;
+  panel.hidden=!active;if(!active)return;
+  const r=state.rps||{};
+  let t=r.result||'請出拳，和電腦決定先手。';
+  if(r.youChoice)t='你已出拳，等待電腦…';
+  else if(r.hasOpponentChoice)t='電腦已出拳，輪到你出拳。';
+  $('ai-rps-status').textContent=t;
+  document.querySelectorAll('[data-ai-rps-choice]').forEach(b=>b.disabled=!!r.youChoice);
 }
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
 function currentBoardCell(r,c){return state?.board?.[r]?.[c]??null;}
@@ -391,6 +403,7 @@ $('copy-room').onclick=()=>copyText(state?.roomId||$('lobby-room').textContent);
 $('copy-watch').onclick=()=>copyText(state?.spectatorCode||state?.roomId||'');
 $('lobby-copy-share').onclick=()=>copyText(`來玩${modeName(state?.gameMode||selectedGameMode)} Online！房號：${state?.roomId||$('lobby-room').textContent}`);
 document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{send({action:'rps',choice:b.dataset.choice});playSound('select')});
+document.querySelectorAll('[data-ai-rps-choice]').forEach(b=>b.onclick=()=>{if(state?.mode==='ai'&&state?.rps?.phase==='rps'&&!state.rps.youChoice){send({action:'rps',choice:b.dataset.aiRpsChoice});playSound('select')}});
 $('undo-btn').onclick=()=>send({action:'proposal',kind:'undo'});
 $('draw-btn').onclick=()=>send({action:'proposal',kind:'draw'});
 $('pass-btn').onclick=()=>{if(state?.gameMode==='go'&&state?.goPhase==='scoring')send({action:'goConfirmScore'});else if(state?.gameMode==='darkbanqi')send({action:'stopChain'});else if(state?.gameMode==='checkers')send({action:'stopChain'});else send({action:'pass'});};
