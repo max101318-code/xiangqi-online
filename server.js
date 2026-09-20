@@ -515,26 +515,31 @@ function beginExtraAfterRps(x,winnerPid){
 }
 function resolveAiExtraRps(x){
   if(!x.ai||x.rps?.phase!=='rps'||!x.players.length)return;
+  if(x.mode==='checkers' && x.players.length===1){
+    // 單人人機跳棋：AI 永遠紅色、玩家永遠藍色；猜拳只決定先手，不存在選色階段。
+    const human=x.players[0], choices=x.rps.choices||{};
+    if(!choices.ai || !choices[human.pid])return;
+    if(choices.ai===choices[human.pid]){
+      x.g.turn=null;
+      x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null,activePids:[human.pid,'ai']};
+      broadcast(x);setTimeout(()=>aiExtraRpsChoose(x),650);return;
+    }
+    const winnerPid=BEATS[choices[human.pid]]===choices.ai?human.pid:'ai';
+    human.color='blue';x.aiColor='red';x.checkerColorByPid={[human.pid]:'blue',ai:'red'};x.checkerColorOrder=['red','blue'];
+    checkerInit(x);x.g.turn=winnerPid;x.g.started=true;setTurnDeadline(x);
+    x.rps={phase:'done',choices,result:`${winnerPid==='ai'?'電腦':'你'} 猜拳獲勝！${winnerPid==='ai'?'電腦（紅色）':'你（藍色）'}先手。`,winnerPid};
+    broadcast(x);if(winnerPid==='ai')setTimeout(()=>aiTurn(x),450);return;
+  }
   if(x.mode==='checkers'){
     const result=resolveCheckersRps(x,x.rps.choices);if(!result)return;
-    if(result.continue){
-      x.g.turn=null;x.rps={...x.rps,phase:'rps',choices:{},result:result.message};
-      broadcast(x);setTimeout(()=>aiExtraRpsChoose(x),650);return;
-    }
-    if(result.tie){
-      x.g.turn=null;x.rps={phase:'rps',choices:{},result:result.reset?'平手！三人重新猜拳':'平手！請再猜一次',winnerPid:null,activePids:x.players.map(p=>p.pid).concat(['ai'])};
-      broadcast(x);setTimeout(()=>aiExtraRpsChoose(x),650);return;
-    }
+    if(result.continue){x.g.turn=null;x.rps={...x.rps,phase:'rps',choices:{},result:result.message};broadcast(x);if(x.ai)setTimeout(()=>aiExtraRpsChoose(x),650);return;}
+    if(result.tie){x.g.turn=null;x.rps={phase:'rps',choices:{},result:result.reset?'平手！三人重新猜拳':'平手！請再猜一次',winnerPid:null,activePids:x.players.map(p=>p.pid).concat(x.ai?['ai']:[])};broadcast(x);if(x.ai)setTimeout(()=>aiExtraRpsChoose(x),650);return;}
     applyCheckersRpsResult(x,result);
     if(x.rps.phase==='choose-color'&&x.rps.colorTurnPid==='ai')setTimeout(()=>aiChooseCheckerColor(x),350);
     return;
   }
   const result=resolveRpsChoices(x,x.rps.choices);if(!result)return;
-  if(result.tie){
-    x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};
-    broadcast(x);
-    return setTimeout(()=>aiExtraRpsChoose(x),650);
-  }
+  if(result.tie){x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};broadcast(x);return setTimeout(()=>aiExtraRpsChoose(x),650);}
   x.g.turn=result.winnerPid;x.rps={phase:'done',choices:x.rps.choices,result:`${result.winnerName} 猜拳獲勝！先手。`,winnerPid:result.winnerPid};x.g.started=true;setTurnDeadline(x);broadcast(x);
   if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
 }
@@ -783,6 +788,10 @@ function publicSnapshot(x,p){
   return {type:'state',roomId:spectator?x.id:(x.ai||x.matchmade?null:x.id),spectatorCode:x.id,matchmade:!!x.matchmade,mode:spectator?'spectator':(x.ai?'ai':'online'),gameMode:x.mode,difficulty:x.difficulty||null,color:spectator?null:(p.color||null),turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,cols:x.g.cols||null,board:x.g.b||x.g.board,holes:x.g.holes||CHECKER_HOLES,camps:x.g.camps||x.checkerCamps||[],maxPlayers:x.maxPlayers||2,started:!!x.g.started,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),spectators:x.spectators?.length||0,rps:{...rps,activePids:x.rps?.activePids||null,rankOrder:x.rps?.rankOrder||null,colorChoices:x.rps?.colorChoices||{},colorTurnPid:x.rps?.colorTurnPid||null,rankPrefix:x.rps?.rankPrefix||null},roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:spectator?null:(x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null),proposal:spectator?null:(x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null),avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null,chain:x.g.chain||null};
 }
 function broadcast(x){[...x.players,...(x.spectators||[])].forEach(p=>send(p,publicSnapshot(x,p)));}
+function broadcastLobbySync(x){
+  const payload={type:'lobby-sync',roomId:x.id,matchmade:!!x.matchmade,gameMode:x.mode,maxPlayers:x.maxPlayers||2,players:playerList(x),spectators:(x.spectators||[]).length};
+  for(const p of x.players)send(p,payload);
+}
 function broadcastMatchmakingWaiting(item){send(item.p,{type:'matchmaking',status:'searching',mode:item.mode});}
 function removeFromMatchmaking(p){for(let i=matchmakingQueue.length-1;i>=0;i--)if(matchmakingQueue[i].p===p)matchmakingQueue.splice(i,1);}
 function tryMatchmaking(){
@@ -1031,7 +1040,7 @@ wss.on('connection',ws=>{
     let m;try{m=JSON.parse(raw)}catch{return}
     if(m.action==='create'){
       const mode=normalizeMode(m.mode),cap=mode==='checkers'?[2,3,4,6].includes(Number(m.playerCount))?Number(m.playerCount):2:2;x=createRoom(mode,false,false,cap);p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);if(mode==='banqi'||mode==='darkbanqi')x.g.turn=p.pid;
-      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:mode,matchmade:false,spectatorCode:x.id});send(p,publicSnapshot(x,p));
+      send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:mode,matchmade:false,spectatorCode:x.id});send(p,publicSnapshot(x,p));broadcastLobbySync(x);
     }else if(m.action==='watch'){
       if(x||p)return send({ws},{type:'error',message:'你目前已有一個連線中的對局，請先離開。'});
       const code=String(m.roomId||'').trim().toUpperCase();
@@ -1051,7 +1060,7 @@ wss.on('connection',ws=>{
       const mode=normalizeMode(m.mode),difficulty=normalizeDifficulty(m.difficulty);x=createRoom(mode,false,true,2);x.difficulty=difficulty;
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
       armAIWatchdog(x);
-      if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){initBanqiBoard(x.g);x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;}
+      if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){initBanqiBoard(x.g);x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color='blue';x.aiColor='red';x.checkerColorByPid={ [p.pid]:'blue', ai:'red' };x.g.board={};x.g.turn=null;x.g.started=false;}
       send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
       if(isExtraMode(mode))setTimeout(()=>aiExtraRpsChoose(x),500);
     }else if(m.action==='join'){
@@ -1060,7 +1069,7 @@ wss.on('connection',ws=>{
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
       if(x.players.length===x.maxPlayers){ if(x.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;} else if(isBanqi(x.mode)){x.g.started=true;x.g.turn=null;setTurnDeadline(x);} }
       send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});
-      broadcast(x);
+      broadcast(x);broadcastLobbySync(x);setTimeout(()=>{if(rooms.get(x.id)===x)broadcastLobbySync(x)},250);
     }else if(!x||!p)return;
     if(p.role==='spectator'){
       if(m.action==='leaveWatch'){x.spectators=x.spectators.filter(q=>q!==p);x=x;send(p,{type:'left-watch'});if(!x.players.length&&!x.spectators.length)rooms.delete(x.id);}

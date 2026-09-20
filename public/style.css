@@ -88,7 +88,7 @@
 /* v3.4 checker linework */
 .checker-grid-art{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}.checker-grid-line{stroke:rgba(70,48,26,.58);stroke-width:.25;vector-effect:non-scaling-stroke}.checker-star-art{pointer-events:none}.checker-hole,.checker-motion-layer{pointer-events:auto}.checker-motion-layer{pointer-events:none}
 
-/* v3.4.6 - 跳棋直接使用使用者提供的完整參考圖，互動孔位透明疊加。 */
+/* v3.4.7 - 跳棋直接使用使用者提供的完整參考圖，互動孔位透明疊加。 */
 .checkers-board{position:relative;width:100%;aspect-ratio:700/686 !important;background:#f8fbd8 !important;border:0 !important;border-radius:0 !important;overflow:hidden !important;padding:0 !important;box-shadow:none !important;}
 .checker-reference-image{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;z-index:0;pointer-events:none;user-select:none;}
 .checker-hit-layer{position:absolute;inset:0;z-index:3;pointer-events:none;}
@@ -108,7 +108,7 @@
 .current-version{position:fixed;right:14px;bottom:10px;z-index:99999;padding:5px 9px;border:1px solid rgba(150,170,200,.25);border-radius:8px;background:rgba(12,18,27,.72);backdrop-filter:blur(6px);color:#9eabc0;font-size:12px;pointer-events:none;}
 @media(max-width:640px){.checker-hole{min-width:8px;min-height:8px;width:5.8%}.checker-motion-piece{min-width:8px;width:5.8%}}
 
-/* v3.4.6 final: exact supplied checkers image + transparent interaction holes */
+/* v3.4.7 final: exact supplied checkers image + transparent interaction holes */
 .checkers-board{aspect-ratio:700/686 !important;background:#f8fbd8 !important;border:0 !important;padding:0 !important;overflow:hidden !important}
 .checker-reference-image{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block;z-index:0}
 .checker-hit-layer{position:absolute;inset:0;z-index:4;pointer-events:none}
@@ -116,6 +116,6 @@
 .current-version{position:fixed;right:14px;bottom:10px;z-index:99999;pointer-events:none}
 *[hidden]{display:none !important}
 
-/* v3.4.6 banqi reveal feedback */
+/* v3.4.7 banqi reveal feedback */
 .banqi-cell.reveal-pulse::before{animation:banqi-reveal-pulse .7s ease-out}
 @keyframes banqi-reveal-pulse{0%{box-shadow:0 0 0 0 rgba(103,220,165,.9),3px 3px 7px rgba(0,0,0,.24)}55%{box-shadow:0 0 0 8px rgba(103,220,165,0),3px 3px 7px rgba(0,0,0,.24)}100%{box-shadow:0 0 0 0 rgba(103,220,165,0),3px 3px 7px rgba(0,0,0,.24)}}

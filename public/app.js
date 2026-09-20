@@ -104,7 +104,7 @@ function showScreen(s){
 function showMatchmaking(status){
   if(status==='searching'){
     $('lobby-room-wrap').classList.add('matchmaking-hidden');$('matchmaking-panel').hidden=false;$('rps-panel').hidden=true;$('color-panel').hidden=true;
-    $('matchmaking-game').textContent=`模式：${modeName(selectedGameMode)}`;$('matchmaking-status').textContent='正在匹配中';showScreen('lobby-screen');
+    $('matchmaking-game').textContent=`模式：${modeName(selectedGameMode)}`;$('matchmaking-status').textContent='正在尋找同模式對手，不建立房號';$('lobby-title').textContent=`${modeName(selectedGameMode)} · 匹配大廳`;$('lobby-room-wrap').classList.add('matchmaking-hidden');showScreen('lobby-screen');
   }else{
     $('matchmaking-panel').hidden=true;$('lobby-room-wrap').classList.remove('matchmaking-hidden');showScreen('home-screen');loadProfile();toast('已取消匹配');
   }
@@ -118,6 +118,11 @@ function handle(m){
   if(m.type==='proposal'){showProposal(m.kind,m.fromName);return}
   if(m.type==='matchmaking'){if(m.status==='searching')showMatchmaking('searching');else showMatchmaking('cancelled');return}
   if(m.type==='rematch-invite'){if(m.ended&&m.roomId&&state?.roomId===m.roomId&&state?.winner)showRematchInvite(m.fromName);else hideRematchInvite();return}
+  if(m.type==='lobby-sync'){
+    state={...state,roomId:m.matchmade?null:(m.roomId||state?.roomId||null),matchmade:!!m.matchmade,gameMode:m.gameMode||state?.gameMode,maxPlayers:m.maxPlayers||state?.maxPlayers||2,players:m.players||state?.players||[],spectators:m.spectators||0};
+    if(state?.mode==='online'){showScreen('lobby-screen');updateLobby();}
+    return;
+  }
   if(m.type==='room'){
     hideRematchInvite();myPid=m.pid||myPid;myColor=m.color||null;
     state={...state,mode:m.mode,gameMode:m.gameMode||selectedGameMode,difficulty:m.difficulty||null,matchmade:!!m.matchmade,roomId:m.roomId||null,spectatorCode:m.spectatorCode||m.roomId||null,color:m.color||null,players:state?.players||[],spectators:state?.spectators||0};
@@ -153,7 +158,7 @@ function lobbyColorButtons(){
 }
 function updateLobby(){
   const ps=state?.players||[],g=state?.gameMode||selectedGameMode;
-  $('lobby-title').textContent=`${modeName(g)} · 房間大廳`;
+  $('lobby-title').textContent=state?.matchmade?`${modeName(g)} · 匹配大廳`:`${modeName(g)} · 房間大廳`;
   $('lobby-room').textContent=state?.roomId||'——';
   $('lobby-room-wrap').classList.toggle('matchmaking-hidden',state?.matchmade===true);
   if(isExtraMode(g)){
@@ -202,7 +207,7 @@ function renderState(previousBoard=null,previousHistory=[]){
   $('game-room-meta').textContent=state.mode==='ai'?`單人 · ${difficultyName(state.difficulty)}`:state.mode==='spectator'?`👁 觀戰 · 觀戰碼 ${state.spectatorCode||state.roomId||'—'}`:(state.matchmade?'⚡ 快速匹配':'房號 '+(state.roomId||'—'));
   const isSpectator=state.mode==='spectator';
   const me=isSpectator?null:(state.players?.find(p=>p.pid===myPid)||state.players?.find(p=>p.color===myColor));
-  const opp=state.mode==='ai'?{name:'電腦',avatar:'🤖',color:g==='xiangqi'?'black':g==='checkers'?'p1':(g==='banqi'||g==='darkbanqi'?(state.players?.[0]?.color===myColor?'black':'red'):'white'),pid:'ai'}:isSpectator?(state.players?.find(p=>p.pid!==state.players?.[0]?.pid)||state.players?.[1]||null):state.players?.find(p=>p.pid!==myPid);
+  const opp=state.mode==='ai'?{name:'電腦',avatar:'🤖',color:g==='xiangqi'?'black':g==='checkers'?'red':(g==='banqi'||g==='darkbanqi'?(state.players?.[0]?.color===myColor?'black':'red'):'white'),pid:'ai'}:isSpectator?(state.players?.find(p=>p.pid!==state.players?.[0]?.pid)||state.players?.[1]||null):state.players?.find(p=>p.pid!==myPid);
   const specLeft=isSpectator?state.players?.[0]:me;
   const my=specLeft||{name:isSpectator?'等待玩家':'玩家',avatar:isSpectator?'❔':profile.avatar,color:isSpectator?(specLeft?.color||null):myColor};
   paintAvatar($('you-avatar'),my.avatar||'❔');$('you-name').textContent=(isSpectator?'👁 ':'')+(my.name||'玩家');$('you-side').textContent=sideName(my.color,g);
@@ -224,8 +229,8 @@ function updateAiRpsPanel(){
     $('ai-rps-status').textContent=t;document.querySelectorAll('[data-ai-rps-choice]').forEach(b=>b.disabled=!!r.youChoice);
   }
   const cp=$('ai-color-panel');if(!cp)return;
-  const colorActive=state?.mode==='ai'&&state?.gameMode==='checkers'&&state?.rps?.phase==='choose-color'&&!state?.winner;
-  cp.hidden=!colorActive;
+  const colorActive=false;
+  cp.hidden=true;
   if(colorActive){
     const r=state.rps||{},picked=r.colorChoices||{},myTurn=r.colorTurnPid===myPid;
     $('ai-color-status').textContent=myTurn?'輪到你選顏色（紅／藍／綠）。':`等待${state.players?.find(p=>p.pid===r.colorTurnPid)?.name||'對手'}選顏色。`;
@@ -306,9 +311,9 @@ function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
   const art=document.createElement('img');
   art.className='checker-reference-image';
-  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.6';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.7';
   art.alt='跳棋棋盤';art.draggable=false;
-  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.6';}};
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.7';}};
   board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){
