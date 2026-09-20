@@ -151,15 +151,18 @@ function updateLobby(){
   $('lobby-room').textContent=state?.roomId||'——';
   $('lobby-room-wrap').classList.toggle('matchmaking-hidden',state?.matchmade===true);
   if(isExtraMode(g)){
-    const wrap=$('.players-card');wrap.innerHTML='';wrap.style.gridTemplateColumns=`repeat(${Math.min(newModeCapacity(),3)},minmax(0,1fr))`;
-    const cap=newModeCapacity();
-    for(let i=0;i<cap;i++){
-      const p=ps[i];const slot=document.createElement('div');slot.className='slot';const av=document.createElement('div');av.className='avatar';paintAvatar(av,p?.avatar||'❔');const body=document.createElement('div');const name=document.createElement('b');name.textContent=p?.name||'等待玩家';const side=document.createElement('span');side.textContent=p?sideName(p.color,g):(g==='checkers'?`等待第${i+1}位玩家`:'等待翻牌');body.append(name,side);const em=document.createElement('em');em.textContent=`玩家 ${i+1}`;slot.append(av,body,em);wrap.appendChild(slot);
+    const wrap=$('.players-card');wrap.innerHTML='';const cap=newModeCapacity();const slots=Math.max(cap,(ps?.length||0));wrap.style.gridTemplateColumns=`repeat(${Math.min(Math.max(slots,2),3)},minmax(0,1fr))`;
+    for(let i=0;i<Math.min(Math.max(slots,2),3);i++){
+      const p=ps[i];const slot=document.createElement('div');slot.className='slot';const av=document.createElement('div');av.className='avatar';paintAvatar(av,p?.avatar||'❔');const body=document.createElement('div');const name=document.createElement('b');name.textContent=p?.name||'等待玩家';const side=document.createElement('span');side.textContent=p?sideName(p.color,g):(g==='checkers'?`等待第${i+1}位玩家`:'等待翻棋');body.append(name,side);const em=document.createElement('em');em.textContent=`玩家 ${i+1}`;slot.append(av,body,em);wrap.appendChild(slot);
     }
-    $('lobby-message').textContent=ps.length<cap?`等待玩家加入：${ps.length}/${cap}`:(g==='checkers'?`${cap} 人跳棋房間已準備完成，開始遊戲！`:'房間已準備完成，第一位玩家先行。');
-    $('rps-panel').hidden=true;$('color-panel').hidden=true;$('matchmaking-panel').hidden=true;
-    $('lobby-state-list').innerHTML=[`模式：${modeName(g)}`,`玩家：${ps.length}/${cap}`,g==='checkers'?`賽制：${cap} 人`:'首位玩家翻開的第一顆棋子決定其陣營。'].map(x=>`<div class="hist">${x}</div>`).join('');
-    $('lobby-room-wrap').classList.toggle('matchmaking-hidden',state?.matchmade===true);
+    const realPlayers=ps.length;
+    const aiExtra=state.mode==='ai';
+    $('lobby-message').textContent=state.rps?.phase==='rps'?`已進入${modeName(g)}猜拳，請所有玩家出拳。`:state.rps?.phase==='done'?(state.rps.result||'猜拳完成，準備開始。'):(g==='checkers'?`等待玩家加入：${Math.min(realPlayers,cap)}/${cap}`:`等待玩家加入：${Math.min(realPlayers,2)}/2`);
+    $('lobby-state-list').innerHTML=[`模式：${modeName(g)}`,`玩家：${Math.min(realPlayers,cap)}/${cap}`,state.rps?.result||'',g==='checkers'?`賽制：最多 3 人，本局 ${cap} 人`:'第一位翻開棋子後依棋面決定陣營。'].filter(Boolean).map(x=>`<div class="hist">${x}</div>`).join('');
+    const rpsReady=(state.rps?.phase==='rps')&&(state.mode==='ai'||realPlayers>=cap);$('rps-panel').hidden=!rpsReady;
+    if(rpsReady){let t=state.rps.result||'請出拳。';if(state.rps.youChoice)t='你已出拳，等待其他玩家…';if(state.rps.hasOpponentChoice&&!state.rps.youChoice)t='對方已出拳，請你出拳。';$('rps-status').textContent=t;document.querySelectorAll('[data-choice]').forEach(b=>b.disabled=!!state.rps.youChoice);}
+    $('color-panel').hidden=true;$('matchmaking-panel').hidden=true;
+    $('lobby-room-wrap').classList.add('matchmaking-hidden');
     return;
   }
   // 原有三種模式維持原本流程
@@ -181,7 +184,8 @@ function isMyTurn(){if(!state||state.mode==='spectator'||state.winner)return fal
 function newModeCapacity(){return state?.gameMode==='checkers'?(Number(state?.maxPlayers)||2):2;}
 function renderState(previousBoard=null,previousHistory=[]){
   if(!state)return;
-  if(state.mode==='online' && ((!isExtraMode(state.gameMode)&&state.rps?.phase!=='done') || (isExtraMode(state.gameMode)&&!state.started))){showScreen('lobby-screen');updateLobby();return;}
+  const needsLobby=(state.mode==='online'&&(!isExtraMode(state.gameMode)&&state.rps?.phase!=='done'||isExtraMode(state.gameMode)&&state.rps?.phase!=='done'))||(state.mode==='online'&&isExtraMode(state.gameMode)&&!state.started)||(state.mode==='ai'&&isExtraMode(state.gameMode)&&state.rps?.phase!=='done');
+  if(needsLobby){showScreen('lobby-screen');updateLobby();return;}
   showScreen('game-screen');
   const g=state.gameMode||'xiangqi';
   $('game-eyebrow').textContent=`${modeName(g)} · ${state.mode==='ai'?'AI 對局':state.mode==='spectator'?'👁 觀戰模式':'ONLINE 對局'}`;

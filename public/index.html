@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Board Arena Online</title>
-<link rel="stylesheet" href="style.css?v=3.2.0">
+<link rel="stylesheet" href="style.css?v=3.3.0">
 </head>
 <body>
 <div id="check-overlay" class="check-overlay" hidden aria-live="assertive"><div class="check-ink"><div class="check-word">將軍！</div><div id="check-target" class="check-target">黑將受到攻擊</div></div></div>
@@ -40,7 +40,7 @@
       <div class="mode-grid">
         <div class="mode-card primary"><b>👥 雙人對戰</b><span>可以建立房間、輸入房號，或使用快速匹配。</span>
           <div class="online-start"><button id="home-match" class="match-btn">⚡ 快速匹配</button><button id="home-online">建立房間</button><input id="home-room" maxlength="6" placeholder="輸入房號"><button id="home-join">加入房間</button></div>
-          <div id="checkers-player-wrap" class="checkers-player-wrap" hidden><label>跳棋人數</label><select id="checkers-player-count"><option value="2">2 人</option><option value="3">3 人</option><option value="4">4 人</option><option value="6">6 人</option></select></div>
+          <div id="checkers-player-wrap" class="checkers-player-wrap" hidden><label>跳棋人數</label><select id="checkers-player-count"><option value="2">2 人</option><option value="3">3 人</option></select></div>
         </div>
         <div class="mode-card"><b>🤖 單人對電腦</b><span>所選遊戲可以直接與 AI 對局。</span>
           <div class="ai-start"><select id="home-difficulty"><option value="easy">簡單</option><option value="normal" selected>普通</option><option value="hard">困難</option></select><button id="home-ai">開始遊戲</button></div>
@@ -85,5 +85,5 @@
     </aside>
   </section>
 </div>
-<script src="app.js?v=3.2.0"></script>
+<script src="app.js?v=3.3.0"></script>
 </body></html>
