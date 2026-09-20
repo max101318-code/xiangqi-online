@@ -21,3 +21,14 @@
 - 明棋／暗棋：翻棋有翻面動畫；移動／吃棋有圓棋子滑動與吃棋回彈效果。
 - 跳棋：單步滑動；跳躍會有拋物線跳躍感；連跳每一步都會播放軌跡。
 - 原有中國象棋車、炮、馬等軌跡不修改。
+
+
+## v3.4.2 fix
+Fixed revealed Banqi/暗棋 cannon pieces rendering blank by using the centralized piece-label mapping, including 炮. Added defensive fallback.
+
+
+### v3.4.2
+- 明棋／暗棋空白格可移動，暗棋連吃同階可繼續。
+- 炮吃子必須隔恰好一枚棋子沿直線飛吃，可吃任何敵棋。
+- 暗棋炮同樣支援飛吃；連吃遇己方棋可停止，遇較大暗棋則翻開並中斷。
+- 跳棋直接使用使用者提供的完整 700×686 棋盤參考圖，121 個棋孔以透明互動區覆蓋。

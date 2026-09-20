@@ -280,7 +280,7 @@ function renderBanqiBoard(board,previousBoard=null,previousHistory=[]){
   const rows=Number(state.rows)||8,cols=Number(state.cols)||4;board.innerHTML='';board.className='banqi-board';
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const el=document.createElement('button');el.type='button';el.className='banqi-cell';el.dataset.r=r;el.dataset.c=c;
-    const p=currentBoardCell(r,c);if(!p)el.classList.add('empty');else if(!p.revealed){el.classList.add('covered');el.innerHTML='<span class="banqi-cover-mark">暗</span>';}else{el.classList.add(p.color);el.textContent=({king:p.color==='red'?'帥':'將',advisor:p.color==='red'?'仕':'士',elephant:p.color==='red'?'相':'象',rook:p.color==='red'?'俥':'車',knight:p.color==='red'?'傌':'馬',pawn:p.color==='red'?'兵':'卒'})[p.type];if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');}
+    const p=currentBoardCell(r,c);if(!p)el.classList.add('empty');else if(!p.revealed){el.classList.add('covered');el.innerHTML='<span class="banqi-cover-mark">暗</span>';}else{el.classList.add(p.color);el.textContent=banqiChar(p);if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');}
     el.onclick=()=>clickCell(r,c);board.appendChild(el);
   }
   if(previousBoard&&previousHistory?.length&&state.history?.length===previousHistory.length+1){
@@ -297,29 +297,38 @@ function animateBanqiMove(board,previousBoard,move){
   let keyframes;if(capture)keyframes=[{transform:`translate(${a.x}px,${a.y}px) translate(-50%,-50%) scale(.95)`},{transform:`translate(${(a.x+b.x)/2}px,${(a.y+b.y)/2-8}px) translate(-50%,-50%) scale(1.08)`},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1)`},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1.12)`,offset:.88},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1)`,offset:1}];else keyframes=[{transform:`translate(${a.x}px,${a.y}px) translate(-50%,-50%) scale(.96)`},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1)` }];
   const anim=piece.animate(keyframes,{duration,easing:'cubic-bezier(.22,.8,.25,1)',fill:'both'});anim.finished.catch(()=>{}).finally(()=>layer.remove());
 }
-function banqiChar(p){return ({king:p.color==='red'?'帥':'將',advisor:p.color==='red'?'仕':'士',elephant:p.color==='red'?'相':'象',rook:p.color==='red'?'俥':'車',cannon:p.color==='red'?'炮':'炮',knight:p.color==='red'?'傌':'馬',pawn:p.color==='red'?'兵':'卒'})[p.type]||'暗';}
+function banqiChar(p){if(!p)return '';const names={king:p.color==='red'?'帥':'將',advisor:p.color==='red'?'仕':'士',elephant:p.color==='red'?'相':'象',rook:p.color==='red'?'俥':'車',cannon:'炮',knight:p.color==='red'?'傌':'馬',pawn:p.color==='red'?'兵':'卒'};return names[p.type]||'暗';}
 function checkerNeighborIds(id){const [q,r]=id.split(',').map(Number);return [[1,-1],[1,0],[0,1],[-1,1],[-1,0],[0,-1]].map(([dq,dr])=>`${q+dq},${r+dr}`);}
 function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('class','checker-star-art');svg.innerHTML=`
-    <polygon class="camp camp-green" points="20,50 35,25 25,5"/><polygon class="camp camp-red" points="65,25 80,50 75,5"/>
-    <polygon class="camp camp-blue" points="80,50 65,75 95,50"/><polygon class="camp camp-green" points="65,75 35,75 75,95"/>
-    <polygon class="camp camp-red" points="35,75 20,50 25,95"/><polygon class="camp camp-blue" points="20,50 35,25 5,50"/>
-    <polygon class="center-hex" points="35,25 65,25 80,50 65,75 35,75 20,50"/>`;
-  board.appendChild(svg);
-  const holes=state.holes||[];const holeMap=new Map(holes.map(h=>[h.id,h]));
-  // 清楚畫出所有相鄰棋孔之間的格線，讓六角星幾何結構完整可見。
-  const links=document.createElementNS('http://www.w3.org/2000/svg','svg');links.setAttribute('viewBox','0 0 100 100');links.setAttribute('class','checker-grid-art');
-  holes.forEach(h=>{for(const nid of checkerNeighborIds(h.id)){const n=holeMap.get(nid);if(!n||String(h.id)>String(n.id))continue;const line=document.createElementNS('http://www.w3.org/2000/svg','line');line.setAttribute('x1',(h.x*100).toFixed(3));line.setAttribute('y1',(h.y*100).toFixed(3));line.setAttribute('x2',(n.x*100).toFixed(3));line.setAttribute('y2',(n.y*100).toFixed(3));line.setAttribute('class','checker-grid-line');links.appendChild(line);}});board.appendChild(links);
-  holes.forEach(h=>{const el=document.createElement('button');el.type='button';el.className='checker-hole';el.style.left=`${h.x*100}%`;el.style.top=`${h.y*100}%`;el.dataset.id=h.id;const occ=state.board?.[h.id];if(occ){const pp=state.players?.find(p=>p.color===occ)||((occ===state.aiColor&&state.mode==='ai')?{color:occ}:null);el.classList.add(`stone-${pp?.color||occ}`);}if(state.chain?.pid===myPid&&state.chain.pos===h.id)el.classList.add('chain-selected');if(selected===h.id)el.classList.add('selected');el.onclick=()=>clickCheckerHole(h.id);board.appendChild(el);});
-  if(previousBoard&&previousHistory?.length&&state.history?.length===previousHistory.length+1){animateCheckerMove(board,previousBoard,state.history[state.history.length-1]);}
+  const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
+  for(const h of (state.holes||[])){
+    const el=document.createElement('button');el.type='button';el.className='checker-hole';
+    el.style.left=`${h.x*100}%`;el.style.top=`${h.y*100}%`;el.dataset.id=h.id;
+    const occ=state.board?.[h.id];if(occ)el.classList.add(`stone-${occ}`);
+    if(selected===h.id)el.classList.add('selected');
+    if(state.chain?.pid===myPid&&state.chain.pos===h.id)el.classList.add('chain-selected');
+    el.onclick=()=>clickCheckerHole(h.id);layer.appendChild(el);
+  }
+  if(previousBoard&&previousHistory?.length&&state.history?.length===previousHistory.length+1){
+    animateCheckerMove(board,previousBoard,state.history[state.history.length-1]);
+  }
 }
 function animateCheckerMove(board,previousBoard,move){
   if(!move?.from||!move?.to)return;const holes=new Map((state.holes||[]).map(h=>[h.id,h]));const a=holes.get(move.from),b=holes.get(move.to);if(!a||!b)return;
   const occ=previousBoard?.[move.from];if(!occ)return;const player=state.players?.find(p=>p.color===occ);const color=player?.color||occ;const layer=document.createElement('div');layer.className='checker-motion-layer';board.appendChild(layer);const rect=board.getBoundingClientRect(),p1={x:a.x*rect.width,y:a.y*rect.height},p2={x:b.x*rect.width,y:b.y*rect.height};const piece=document.createElement('div');piece.className=`checker-motion-piece ${color}`;layer.appendChild(piece);
   const jump=move.kind==='jump',duration=jump?460:300,dx=p2.x-p1.x,dy=p2.y-p1.y;let frames;if(jump){const lift=Math.max(18,Math.hypot(dx,dy)*.18);frames=[{transform:`translate(${p1.x}px,${p1.y}px) translate(-50%,-50%) scale(.9)`},{transform:`translate(${p1.x+dx*.5}px,${p1.y+dy*.5-lift}px) translate(-50%,-50%) scale(1.12)`},{transform:`translate(${p2.x}px,${p2.y}px) translate(-50%,-50%) scale(1)`}] }else frames=[{transform:`translate(${p1.x}px,${p1.y}px) translate(-50%,-50%) scale(.95)`},{transform:`translate(${p2.x}px,${p2.y}px) translate(-50%,-50%) scale(1)` }];const anim=piece.animate(frames,{duration,easing:'cubic-bezier(.2,.8,.25,1)',fill:'both'});anim.finished.catch(()=>{}).finally(()=>layer.remove());
 }
-function clickCheckerHole(id){if(!state||state.mode==='spectator'||state.winner||!isMyTurn())return;if(!selected){if(state.board?.[id]===myColor||state.board?.[id]===(state.players?.find(p=>p.pid===myPid)?.color)){selected=id;playSound('select');renderBoard();}return;}if(selected===id){selected=null;renderBoard();return;}send({action:'move',from:selected,to:id});selected=null;playSound('move');}
+function clickCheckerHole(id){
+  if(!state||state.mode==='spectator'||state.winner||!isMyTurn())return;
+  const mineColor=state.players?.find(p=>p.pid===myPid)?.color;
+  const occ=state.board?.[id]||null,chainActive=state.chain?.pid===myPid;
+  if(!selected){if(occ===mineColor){selected=id;playSound('select');renderBoard();}return;}
+  if(selected===id){selected=null;renderBoard();return;}
+  if(chainActive&&occ===mineColor){send({action:'stopChain'});selected=null;renderBoard();return;}
+  if(chainActive&&!occ){send({action:'stopChain'});selected=null;renderBoard();return;}
+  send({action:'move',from:selected,to:id});selected=null;playSound('move');renderBoard();
+}
 function renderHistory(){
   const hist=state.history||[];$('move-count').textContent=`${hist.length} 手`;
   $('history').innerHTML=hist.map(x=>{
@@ -396,13 +405,25 @@ function clickCell(r,c){
   if(g==='gomoku'){if(currentBoardCell(r,c))return;send({action:'move',r,c});playSound('move');return;}
   if(g==='go'){if(state.goPhase==='scoring'){if(currentBoardCell(r,c)){send({action:'goToggleDead',r,c});playSound('select');}return}if(currentBoardCell(r,c))return;send({action:'move',r,c});playSound('move');return;}
   if(isBanqiMode(g)){
-    const p=currentBoardCell(r,c);
-    if(!p){return;}
-    if(!p.revealed){if(g==='darkbanqi'&&selected){send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});selected=null;playSound('capture');renderBoard();return;}send({action:'move',subaction:'flip',r,c});return;}
-    const mine=p.color===myColor;
-    if(!selected){if(mine){selected=[r,c];playSound('select');renderBoard();}return;}
-    if(mine){selected=[r,c];renderBoard();return;}
-    send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});selected=null;playSound('capture');renderBoard();return;
+    const p=currentBoardCell(r,c),chainActive=state.chain?.pid===myPid;
+    if(!selected){
+      if(!p)return;
+      if(!p.revealed){send({action:'move',subaction:'flip',r,c});return;}
+      if(p.color===myColor){selected=[r,c];playSound('select');renderBoard();}
+      return;
+    }
+    if(chainActive){
+      if(p?.color===myColor||!p){send({action:'stopChain'});selected=null;renderBoard();return;}
+      send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});
+      selected=null;playSound('capture');renderBoard();return;
+    }
+    if(!p){
+      send({action:'move',subaction:'move',r:selected[0],c:selected[1],toR:r,toC:c});
+      selected=null;playSound('move');renderBoard();return;
+    }
+    if(p.color===myColor){selected=[r,c];playSound('select');renderBoard();return;}
+    send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});
+    selected=null;playSound('capture');renderBoard();return;
   }
 }
 

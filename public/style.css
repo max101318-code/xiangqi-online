@@ -87,3 +87,24 @@
 @media(max-width:640px){.banqi-board{gap:0;padding:4px;border-width:5px}.banqi-cell::before{width:82%}.checker-board,.checkers-board{border-width:5px}.checker-hole{min-width:8px;min-height:8px;width:4.8%}.checker-motion-piece{min-width:8px;width:4.8%}}
 /* v3.4 checker linework */
 .checker-grid-art{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}.checker-grid-line{stroke:rgba(70,48,26,.58);stroke-width:.25;vector-effect:non-scaling-stroke}.checker-star-art{pointer-events:none}.checker-hole,.checker-motion-layer{pointer-events:auto}.checker-motion-layer{pointer-events:none}
+
+/* v3.4.2 - 跳棋完全使用使用者提供的 700×686 參考圖；白圈為可互動棋孔。 */
+.checkers-board{
+  position:relative;width:100%;aspect-ratio:700/686;
+  background:#f8fbd8 url('/checkers-board-reference.png') center/100% 100% no-repeat;
+  border:0;border-radius:0;overflow:hidden;box-shadow:none;
+}
+.checker-hit-layer{position:absolute;inset:0;z-index:3}
+.checker-hole{
+  position:absolute;width:5.2%;height:5.2%;min-width:18px;min-height:18px;
+  transform:translate(-50%,-50%);border:2px solid transparent;border-radius:50%;
+  background:transparent;padding:0;cursor:pointer;z-index:2;
+}
+.checker-hole:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.55)}
+.checker-hole.selected{outline:4px solid rgba(255,255,255,.95);outline-offset:1px}
+.checker-hole.chain-selected{outline:4px dashed #f3c35e;outline-offset:1px}
+.checker-hole::after{content:'';position:absolute;left:50%;top:50%;width:74%;height:74%;transform:translate(-50%,-50%);border-radius:50%;opacity:0;pointer-events:none}
+.checker-hole.stone-red::after{opacity:1;background:radial-gradient(circle at 35% 30%,#ff7771,#bd2522 67%,#7e1715);box-shadow:0 3px 7px #0007}
+.checker-hole.stone-blue::after{opacity:1;background:radial-gradient(circle at 35% 30%,#9bcfff,#3a83c4 67%,#1d4e7d);box-shadow:0 3px 7px #0006}
+.checker-hole.stone-green::after{opacity:1;background:radial-gradient(circle at 35% 30%,#a1edac,#3e9f58 67%,#24653a);box-shadow:0 3px 7px #0006}
+@media(max-width:640px){.checker-hole{min-width:8px;min-height:8px;width:5.8%;height:5.8%}}

@@ -87,47 +87,70 @@ function banqiEndsIfWon(x,p){
   if(banqiRemaining(x,opp)===0){x.g.winner=p.color;x.g.winnerPid=p.pid;x.g.endedReason=`${p.name||'玩家'} 消滅對方全部棋子，獲勝！`;x.g.turn=null;x.g.turnDeadline=null;return true;}
   return false;
 }
+
 function banqiAdjacent(r1,c1,r2,c2){return Math.abs(r1-r2)+Math.abs(c1-c2)===1;}
-function banqiNextPid(x,pid){
-  const ids=x.players.map(p=>p.pid); if(x.ai) ids.push('ai'); const i=ids.indexOf(pid);return ids[(i+1+ids.length)%ids.length]||null;
+function banqiOrthogonal(r1,c1,r2,c2){return (r1===r2||c1===c2)&&!(r1===r2&&c1===c2);}
+function banqiBetweenCount(board,r1,c1,r2,c2){
+  if(!banqiOrthogonal(r1,c1,r2,c2))return -1;
+  const dr=Math.sign(r2-r1),dc=Math.sign(c2-c1);let r=r1+dr,c=c1+dc,n=0;
+  while(r!==r2||c!==c2){if(board[r][c])n++;r+=dr;c+=dc;}
+  return n;
+}
+function banqiCaptureRule(att,target,board,r1,c1,r2,c2){
+  if(!att||!target||att.color===target.color)return false;
+  if(att.type==='cannon')return banqiBetweenCount(board,r1,c1,r2,c2)===1;
+  if(!banqiAdjacent(r1,c1,r2,c2))return false;
+  return banqiCanEat(att,target);
+}
+function banqiPlayerByPid(x,id){if(id==='ai')return{pid:'ai',name:'電腦',color:x.aiColor};return x.players.find(p=>p.pid===id)||null;}
+function banqiRemaining(x,color){let n=0;for(const row of x.g.board)for(const p of row)if(p&&p.color===color)n++;return n;}
+function banqiEndsIfWon(x,p){
+  const opp=banqiOppColor(p.color);
+  if(banqiRemaining(x,opp)===0){x.g.winner=p.color;x.g.winnerPid=p.pid;x.g.endedReason=`${p.name||'玩家'} 消滅對方全部棋子，獲勝！`;x.g.turn=null;x.g.turnDeadline=null;return true;}
+  return false;
 }
 function applyBanqi(x,p,m){
-  const g=x.g;
-  if(g.winner)return{error:'遊戲已結束'};
-  if(g.turn!==p.pid)return{error:'還沒輪到你'};
-  if(g.turnDeadline&&Date.now()>g.turnDeadline){timeOut(x);return{error:'回合時間已到'};}
+  const g=x.g;if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.pid)return{error:'還沒輪到你'};
+  if(g.turnDeadline&&Date.now()>g.turnDeadline){timeOut(x);return{error:'回合時間已到'}};
   const r=+m.r,c=+m.c;if(r<0||r>=BANQI_ROWS||c<0||c>=BANQI_COLS)return{error:'位置超出棋盤'};
-  const cell=g.board[r][c];
+  const cell=g.board[r]?.[c];
+
   if(m.action==='flip'){
-    if(cell.revealed)return{error:'這顆棋已經翻開'};
+    if(!cell)return{error:'這裡沒有棋子'};if(cell.revealed)return{error:'這顆棋已經翻開'};
     cell.revealed=true;
-    if(!p.color){
-      p.color=cell.color;
-      x.aiColor=x.ai?banqiOppColor(p.color):null;
-      const other=x.players.find(q=>q.pid!==p.pid);if(other)other.color=banqiOppColor(p.color);
-      if(x.ai){x.aiColor=banqiOppColor(p.color);}
-    }
+    if(!p.color){p.color=cell.color;x.aiColor=x.ai?banqiOppColor(p.color):null;const other=x.players.find(q=>q.pid!==p.pid);if(other)other.color=banqiOppColor(p.color);}
     g.history.push({n:g.move,color:p.color||cell.color,move:'翻棋',at:[r+1,c+1],piece:banqiLabel(cell)});g.move++;
     g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
   }
+
   if(!cell||!cell.revealed)return{error:'這裡不是已翻開的棋子'};
   if(cell.color!==p.color)return{error:'只能使用自己的已翻開棋子'};
-  const toR=+m.toR,toC=+m.toC;if(!banqiAdjacent(r,c,toR,toC))return{error:'只能上下左右移動一格'};
+  const toR=+m.toR,toC=+m.toC;if(toR<0||toR>=BANQI_ROWS||toC<0||toC>=BANQI_COLS)return{error:'目的地超出棋盤'};
   const target=g.board[toR]?.[toC];
+
   if(m.action==='move'){
+    if(!banqiAdjacent(r,c,toR,toC))return{error:'移動只能上下左右一格'};
     if(target)return{error:'目標格已有棋子'};
-    const before=clone(g);g.board[toR][toC]=cell;g.board[r][c]=null;g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1]});g.move++;x.undoStack.push(before);g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+    if(g.chain?.pid===p.pid)return{error:'連吃中不能普通移動，請吃棋或停止連吃'};
+    const before=clone(g);g.board[toR][toC]=cell;g.board[r][c]=null;
+    g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1]});g.move++;x.undoStack.push(before);
+    g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
   }
+
   if(m.action==='capture'){
-    if(x.mode==='banqi' && (!target||!target.revealed))return{error:'明棋不能吃未翻開的暗棋'};
     if(!target)return{error:'目標沒有棋子'};
-    const wasCovered=!target.revealed;if(target.revealed===false)target.revealed=true;
-    if(!banqiCanEat(cell,target)){
-      if(x.mode==='darkbanqi'&&wasCovered){g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});g.move++;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};}
+    const wasCovered=!target.revealed;
+    if(x.mode==='banqi'&&wasCovered)return{error:'明棋不能吃未翻開的暗棋'};
+    const testTarget=wasCovered?Object.assign({},target,{revealed:true}):target;
+    if(!banqiCaptureRule(cell,testTarget,g.board,r,c,toR,toC)){
+      if(x.mode==='darkbanqi'&&wasCovered&&cell.type!=='cannon'&&!banqiCanEat(cell,testTarget)){
+        target.revealed=true;
+        g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
+        g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+      }
       return{error:'這顆棋不能吃目標棋子'};
     }
-    const before=clone(g);
-    g.board[toR][toC]=cell;g.board[r][c]=null;
+    const before=clone(g);g.board[toR][toC]=cell;g.board[r][c]=null;
     if(x.mode==='darkbanqi'){
       g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],captured:banqiLabel(target),coveredTarget:wasCovered});g.move++;x.undoStack.push(before);
       if(banqiEndsIfWon(x,p))return{ok:true};
@@ -136,45 +159,77 @@ function applyBanqi(x,p,m){
       return{ok:true};
     }
     g.history.push({n:g.move,color:p.color,piece:banqiLabel(cell),from:[r+1,c+1],to:[toR+1,toC+1],captured:banqiLabel(target)});g.move++;x.undoStack.push(before);
-    if(banqiEndsIfWon(x,p))return{ok:true};g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+    if(banqiEndsIfWon(x,p))return{ok:true};
+    g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
   }
   return{error:'未知動作'};
 }
 function hasBanqiChainCapture(x,pid,r,c){
-  const p=banqiPlayerByPid(x,pid);if(!p?.color)return false;
-  for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const rr=r+dr,cc=c+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;const t=x.g.board[rr][cc];if(!t||t.color===p.color)continue;if(x.mode==='banqi'&&!t.revealed)continue;if(!t.revealed){const cp=clone(t);cp.revealed=true;if(banqiCanEat(x.g.board[r][c],cp))return true;}else if(banqiCanEat(x.g.board[r][c],t))return true;}return false;
+  const p=banqiPlayerByPid(x,pid);if(!p?.color)return false;const att=x.g.board[r]?.[c];if(!att)return false;
+  for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
+    if(rr===r&&cc===c)continue;const t=x.g.board[rr][cc];if(!t||t.color===p.color)continue;
+    if(x.mode==='banqi'&&!t.revealed)continue;
+    const test=t.revealed?t:Object.assign({},t,{revealed:true});
+    if(banqiCaptureRule(att,test,x.g.board,r,c,rr,cc))return true;
+  }
+  return false;
 }
 function stopBanqiChain(x,p){if(x.mode!=='darkbanqi'||!x.g.chain||x.g.chain.pid!==p.pid)return{error:'目前沒有你的連吃回合'};x.g.chain=null;x.g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};}
 
-function checkerCubeKey(q,r){return `${q},${r}`;}
-function buildCheckerHoles(){
-  const set=new Map(),dirs=[[1,-1,0],[1,0,-1],[0,1,-1],[-1,1,0],[-1,0,1],[0,-1,1]];
-  for(let x=-4;x<=4;x++)for(let y=-4;y<=4;y++){const z=-x-y;if(Math.max(Math.abs(x),Math.abs(y),Math.abs(z))<=4)set.set(checkerCubeKey(x,y),{q:x,r:y,s:z});}
-  for(let di=0;di<6;di++){
-    const d=dirs[di],e=dirs[(di+1)%6];
-    for(let k=5;k<=8;k++)for(let j=0;j<=k-5;j++){const q=k*d[0]+j*e[0],r=k*d[1]+j*e[1],s=k*d[2]+j*e[2];set.set(checkerCubeKey(q,r),{q,r,s,camp:di});}
-  }
-  const arr=[...set.values()];const minX=Math.min(...arr.map(v=>v.q+v.r*0.5)),maxX=Math.max(...arr.map(v=>v.q+v.r*0.5));const minY=Math.min(...arr.map(v=>v.r*0.8660254)),maxY=Math.max(...arr.map(v=>v.r*0.8660254));
-  return [...arr].map(v=>({id:checkerCubeKey(v.q,v.r),q:v.q,r:v.r,s:v.s,x:(v.q+v.r*0.5-minX)/(maxX-minX),y:(v.r*0.8660254-minY)/(maxY-minY),camp:v.camp??-1}));
-}
-const CHECKER_HOLES=buildCheckerHoles(),CHECKER_HOLE_SET=new Set(CHECKER_HOLES.map(h=>h.id));
-function checkerArm(di,includeInner5=false){
-  const dirs=[[1,-1,0],[1,0,-1],[0,1,-1],[-1,1,0],[-1,0,1],[0,-1,1]],d=dirs[di],e=dirs[(di+1)%6],set=new Set();
-  for(let k=5;k<=8;k++)for(let j=0;j<=k-5;j++)set.add(checkerCubeKey(k*d[0]+j*e[0],k*d[1]+j*e[1]));
-  if(includeInner5)for(let j=0;j<5;j++)set.add(checkerCubeKey(4*d[0]+j*e[0],4*d[1]+j*e[1]));
-  return [...set];
-}
-function checkerCamps(count){
-  const picks=count===2?[0,3]:count===3?[0,2,4]:count===4?[0,1,3,4]:[0,1,2,3,4,5];
-  return picks.map(di=>checkerArm(di,count===2));
-}
-const CHECKER_DIRS=[[1,-1], [1,0], [0,1],[-1,1],[-1,0],[0,-1]];
-const CHECKER_COLORS=['red','blue','green'];
+const CHECKER_HOLES=[{id:'h0',x:0.271429,y:0.163265,camp:0},{id:'h1',x:0.730000,y:0.164723,camp:1},{id:'h2',x:0.671429,y:0.193878,camp:1},{id:'h3',x:0.328571,y:0.198251,camp:0},{id:'h4',x:0.727143,y:0.225948,camp:1},{id:'h5',x:0.615714,y:0.228863,camp:1},{id:'h6',x:0.387143,y:0.230321,camp:0},{id:'h7',x:0.271429,y:0.231778,camp:0},{id:'h8',x:0.560000,y:0.260933,camp:1},{id:'h9',x:0.672857,y:0.260933,camp:1},{id:'h10',x:0.444286,y:0.263848,camp:0},{id:'h11',x:0.328571,y:0.265306,camp:0},{id:'h12',x:0.615714,y:0.293003,camp:1},{id:'h13',x:0.731429,y:0.294461,camp:1},{id:'h14',x:0.501429,y:0.295918,camp:-1},{id:'h15',x:0.387143,y:0.298834,camp:0},{id:'h16',x:0.272857,y:0.300292,camp:0},{id:'h17',x:0.672857,y:0.326531,camp:1},{id:'h18',x:0.558571,y:0.329446,camp:-1},{id:'h19',x:0.442857,y:0.330904,camp:-1},{id:'h20',x:0.330000,y:0.333819,camp:0},{id:'h21',x:0.731429,y:0.360058,camp:1},{id:'h22',x:0.615714,y:0.362974,camp:-1},{id:'h23',x:0.272857,y:0.364431,camp:0},{id:'h24',x:0.500000,y:0.364431,camp:-1},{id:'h25',x:0.387143,y:0.365889,camp:-1},{id:'h26',x:0.672857,y:0.396501,camp:-1},{id:'h27',x:0.331429,y:0.397959,camp:-1},{id:'h28',x:0.558571,y:0.397959,camp:-1},{id:'h29',x:0.444286,y:0.399417,camp:-1},{id:'h30',x:0.730000,y:0.430029,camp:-1},{id:'h31',x:0.388571,y:0.431487,camp:-1},{id:'h32',x:0.614286,y:0.431487,camp:-1},{id:'h33',x:0.501429,y:0.432945,camp:-1},{id:'h34',x:0.272857,y:0.434402,camp:-1},{id:'h35',x:0.787143,y:0.462099,camp:2},{id:'h36',x:0.444286,y:0.465015,camp:-1},{id:'h37',x:0.671429,y:0.465015,camp:-1},{id:'h38',x:0.217143,y:0.466472,camp:5},{id:'h39',x:0.558571,y:0.466472,camp:-1},{id:'h40',x:0.330000,y:0.467930,camp:-1},{id:'h41',x:0.844286,y:0.495627,camp:2},{id:'h42',x:0.502857,y:0.497085,camp:-1},{id:'h43',x:0.730000,y:0.497085,camp:-1},{id:'h44',x:0.275714,y:0.500000,camp:-1},{id:'h45',x:0.388571,y:0.500000,camp:-1},{id:'h46',x:0.615714,y:0.500000,camp:-1},{id:'h47',x:0.160000,y:0.501458,camp:5},{id:'h48',x:0.901429,y:0.529155,camp:2},{id:'h49',x:0.560000,y:0.530612,camp:-1},{id:'h50',x:0.785714,y:0.530612,camp:2},{id:'h51',x:0.331429,y:0.532070,camp:-1},{id:'h52',x:0.672857,y:0.532070,camp:-1},{id:'h53',x:0.101429,y:0.534985,camp:5},{id:'h54',x:0.218571,y:0.534985,camp:5},{id:'h55',x:0.444286,y:0.534985,camp:-1},{id:'h56',x:0.958571,y:0.562682,camp:2},{id:'h57',x:0.615714,y:0.564140,camp:-1},{id:'h58',x:0.844286,y:0.564140,camp:2},{id:'h59',x:0.275714,y:0.565598,camp:-1},{id:'h60',x:0.388571,y:0.565598,camp:-1},{id:'h61',x:0.730000,y:0.565598,camp:-1},{id:'h62',x:0.160000,y:0.567055,camp:5},{id:'h63',x:0.501429,y:0.567055,camp:-1},{id:'h64',x:0.045714,y:0.569971,camp:5},{id:'h65',x:0.674286,y:0.597668,camp:-1},{id:'h66',x:0.901429,y:0.597668,camp:2},{id:'h67',x:0.447143,y:0.599125,camp:-1},{id:'h68',x:0.560000,y:0.599125,camp:-1},{id:'h69',x:0.787143,y:0.599125,camp:2},{id:'h70',x:0.217143,y:0.600583,camp:5},{id:'h71',x:0.331429,y:0.600583,camp:-1},{id:'h72',x:0.104286,y:0.602041,camp:5},{id:'h73',x:0.731429,y:0.628280,camp:-1},{id:'h74',x:0.844286,y:0.631195,camp:2},{id:'h75',x:0.388571,y:0.632653,camp:-1},{id:'h76',x:0.502857,y:0.632653,camp:-1},{id:'h77',x:0.615714,y:0.632653,camp:-1},{id:'h78',x:0.275714,y:0.634111,camp:-1},{id:'h79',x:0.160000,y:0.635569,camp:5},{id:'h80',x:0.787143,y:0.661808,camp:2},{id:'h81',x:0.447143,y:0.666181,camp:-1},{id:'h82',x:0.560000,y:0.666181,camp:-1},{id:'h83',x:0.674286,y:0.666181,camp:-1},{id:'h84',x:0.331429,y:0.667638,camp:-1},{id:'h85',x:0.217143,y:0.669096,camp:5},{id:'h86',x:0.502857,y:0.698251,camp:-1},{id:'h87',x:0.618571,y:0.698251,camp:-1},{id:'h88',x:0.731429,y:0.698251,camp:-1},{id:'h89',x:0.388571,y:0.701166,camp:-1},{id:'h90',x:0.275714,y:0.702624,camp:-1},{id:'h91',x:0.674286,y:0.731778,camp:-1},{id:'h92',x:0.447143,y:0.733236,camp:-1},{id:'h93',x:0.561429,y:0.733236,camp:-1},{id:'h94',x:0.331429,y:0.736152,camp:-1},{id:'h95',x:0.731429,y:0.763848,camp:3},{id:'h96',x:0.618571,y:0.765306,camp:-1},{id:'h97',x:0.502857,y:0.766764,camp:-1},{id:'h98',x:0.277143,y:0.768222,camp:4},{id:'h99',x:0.388571,y:0.768222,camp:-1},{id:'h100',x:0.674286,y:0.798834,camp:3},{id:'h101',x:0.447143,y:0.800292,camp:-1},{id:'h102',x:0.560000,y:0.800292,camp:-1},{id:'h103',x:0.332857,y:0.801749,camp:4},{id:'h104',x:0.732857,y:0.832362,camp:3},{id:'h105',x:0.275714,y:0.833819,camp:4},{id:'h106',x:0.502857,y:0.833819,camp:-1},{id:'h107',x:0.618571,y:0.833819,camp:3},{id:'h108',x:0.390000,y:0.835277,camp:4},{id:'h109',x:0.447143,y:0.867347,camp:4},{id:'h110',x:0.561429,y:0.867347,camp:3},{id:'h111',x:0.674286,y:0.867347,camp:3},{id:'h112',x:0.335714,y:0.868805,camp:4},{id:'h113',x:0.618571,y:0.899417,camp:3},{id:'h114',x:0.731429,y:0.899417,camp:3},{id:'h115',x:0.277143,y:0.902332,camp:4},{id:'h116',x:0.391429,y:0.902332,camp:4},{id:'h117',x:0.674286,y:0.932945,camp:3},{id:'h118',x:0.335714,y:0.934402,camp:4},{id:'h119',x:0.732857,y:0.966472,camp:3},{id:'h120',x:0.278571,y:0.969388,camp:4}];
+const CHECKER_CAMPS=[['h0','h3','h7','h11','h6','h16','h15','h20','h23','h10'],['h1','h4','h2','h9','h13','h5','h17','h12','h21','h8'],['h56','h66','h48','h58','h74','h41','h69','h50','h80','h35'],['h119','h114','h117','h111','h104','h113','h107','h100','h110','h95'],['h120','h115','h118','h112','h116','h105','h108','h103','h109','h98'],['h64','h53','h72','h62','h47','h79','h70','h54','h38','h85']];
 const CHECKER_COLOR_LABELS={red:'紅色',blue:'藍色',green:'綠色'};
-const CHECKER_COLOR_ARM={red:0,blue:1,green:2};
+const CHECKER_COLOR_ARM={green:0,red:1,blue:2};
+const CHECKER_COLORS=['red','blue','green'];
 function checkerColorLabel(c){return CHECKER_COLOR_LABELS[c]||'待定';}
+function checkerArm(di){return (CHECKER_CAMPS[di]||[]).slice();}
+function checkerCamps(count){return CHECKER_CAMPS.map(c=>c.slice());}
 function unusedCheckerColor(x){return CHECKER_COLORS.find(c=>!(x.checkerColorChoices||{})[c] && !(x.players||[]).some(p=>p.color===c))||null;}
-function checkerNeighbors(id){const [q,r]=id.split(',').map(Number);return CHECKER_DIRS.map(([dq,dr])=>checkerCubeKey(q+dq,r+dr));}
+
+function buildCheckerGraphs(){
+  const neighbors=Object.fromEntries(CHECKER_HOLES.map(h=>[h.id,new Set()])); const jumps=Object.fromEntries(CHECKER_HOLES.map(h=>[h.id,new Map()]));
+  const byId=new Map(CHECKER_HOLES.map(h=>[h.id,h]));
+  const dirs=[[-.8660254,-.5],[0,-1],[.8660254,-.5],[.8660254,.5],[0,1],[-.8660254,.5]];
+  for(const h of CHECKER_HOLES){
+    const px=h.x*700,py=h.y*686;
+    for(const [dx,dy] of dirs){
+      let best=null;
+      for(const n of CHECKER_HOLES){
+        if(n.id===h.id)continue;
+        const qx=n.x*700-px,qy=n.y*686-py,dist=Math.hypot(qx,qy);
+        if(dist<37||dist>50)continue;
+        const dot=(qx*dx+qy*dy)/dist;
+        const ang=Math.acos(Math.max(-1,Math.min(1,dot)))*180/Math.PI;
+        if(ang>14)continue;
+        const score=ang*2+Math.abs(dist-44);
+        if(!best||score<best.score)best={id:n.id,score};
+      }
+      if(best)neighbors[h.id].add(best.id);
+    }
+  }
+  for(const id of Object.keys(neighbors))for(const n of neighbors[id])neighbors[n].add(id);
+  for(const h of CHECKER_HOLES){
+    const px=h.x*700,py=h.y*686;
+    for(const n of neighbors[h.id]){
+      const nh=byId.get(n);if(!nh)continue;
+      const tx=px+2*(nh.x*700-px),ty=py+2*(nh.y*686-py);
+      let best=null;
+      for(const t of CHECKER_HOLES){
+        const d=Math.hypot(t.x*700-tx,t.y*686-ty);
+        if(!best||d<best.d)best={id:t.id,d};
+      }
+      if(best&&best.d<=9)jumps[h.id].set(best.id,n);
+    }
+  }
+  return {
+    neighbors:Object.fromEntries(Object.entries(neighbors).map(([k,v])=>[k,[...v]])),
+    jumps:Object.fromEntries(Object.entries(jumps).map(([k,v])=>[k,[...v.entries()].map(([to,mid])=>({to,mid}))]))
+  };
+}
+const CHECKER_GRAPH=buildCheckerGraphs();
+const CHECKER_HOLE_SET=new Set(CHECKER_HOLES.map(h=>h.id));
+function checkerNeighbors(id){return CHECKER_GRAPH.neighbors[id]||[];}
+function checkerJumpTargets(id){return (CHECKER_GRAPH.jumps[id]||[]).map(x=>x.to);}
 function checkerPlayerByPid(x,pid){if(pid==='ai'&&x.ai)return{pid:'ai',name:'電腦',avatar:'🤖',color:x.aiColor||'blue',connected:true};return x.players.find(p=>p.pid===pid)||null;}
 function checkerInit(x){
   const count=x.maxPlayers===3?3:2;
@@ -667,20 +722,92 @@ function aiGoMove(x,level){
   return best;
 }
 function aiColor(x){return x.mode==='xiangqi'?'black':x.mode==='gomoku'||x.mode==='go'?'white':x.aiColor||'p1';}
+
+function banqiAICaptureCandidates(x,p){
+  const g=x.g,c=[];
+  for(let r=0;r<BANQI_ROWS;r++)for(let col=0;col<BANQI_COLS;col++){
+    const me=g.board[r][col];if(!me||!me.revealed||me.color!==p.color)continue;
+    if(me.type==='cannon'){
+      for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
+        const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+        const test=t.revealed?t:Object.assign({},t,{revealed:true});
+        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:t.revealed?200:180});
+      }
+    }else{
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const rr=r+dr,cc=col+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;
+        const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+        if(x.mode==='banqi'&&!t.revealed)continue;
+        const test=t.revealed?t:Object.assign({},t,{revealed:true});
+        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:100+BANQI_RANK[test.type]});
+        else if(x.mode==='darkbanqi'&&!t.revealed&&!banqiCanEat(me,test))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:70});
+      }
+    }
+  }
+  return c;
+}
 function aiBanqiAction(x){
-  const p={pid:'ai',name:'電腦',color:x.aiColor};const g=x.g;
-  if(!p.color){const covered=[];for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++)if(g.board[r][c]&&!g.board[r][c].revealed)covered.push([r,c]);if(covered.length){const [r,c]=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r,c});}return{error:'沒有可翻棋子'};}
-  // Prefer capture, then move, then flip.
-  const candidates=[];for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++){const me=g.board[r][c];if(!me||!me.revealed||me.color!==p.color)continue;for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const rr=r+dr,cc=c+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;const t=g.board[rr][cc];if(x.mode==='darkbanqi'&&t&&!t.revealed){candidates.push({action:'capture',r,c,toR:rr,toC:cc,score:80});continue;}if(t&&t.revealed&&banqiCanEat(me,t))candidates.push({action:'capture',r,c,toR:rr,toC:cc,score:100+BANQI_RANK[t.type]});else if(!t)candidates.push({action:'move',r,c,toR:rr,toC:cc,score:10});}}
+  const p={pid:'ai',name:'電腦',color:x.aiColor},g=x.g;
+  if(!p.color){
+    const covered=[];for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++)if(g.board[r][c]&&!g.board[r][c].revealed)covered.push([r,c]);
+    if(covered.length){const [r,c]=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r,c});}
+    return{error:'沒有可翻棋子'};
+  }
+  if(g.chain?.pid==='ai'){
+    const fromR=g.chain.r,fromC=g.chain.c,me=g.board[fromR]?.[fromC],cands=[];
+    if(me){
+      if(me.type==='cannon'){
+        for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
+          const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+          const test=t.revealed?t:Object.assign({},t,{revealed:true});
+          if(banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc))cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
+        }
+      }else{
+        for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const rr=fromR+dr,cc=fromC+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;
+          const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+          const test=t.revealed?t:Object.assign({},t,{revealed:true});
+          if(t.revealed?banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc): (x.mode==='darkbanqi'&&banqiCanEat(me,test)))
+            cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
+        }
+      }
+    }
+    if(!cands.length)return stopBanqiChain(x,p);
+    return applyBanqi(x,p,cands[Math.floor(Math.random()*cands.length)]);
+  }
+  const captures=banqiAICaptureCandidates(x,p);
+  const moves=[];
+  for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++){
+    const me=g.board[r][c];if(!me||!me.revealed||me.color!==p.color)continue;
+    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const rr=r+dr,cc=c+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;
+      if(!g.board[rr][cc])moves.push({action:'move',r,c,toR:rr,toC:cc,score:10});
+    }
+  }
   const covered=[];for(let r=0;r<BANQI_ROWS;r++)for(let c=0;c<BANQI_COLS;c++)if(g.board[r][c]&&!g.board[r][c].revealed)covered.push([r,c]);
-  if(candidates.length){candidates.sort((a,b)=>b.score-a.score);const pick=x.difficulty==='hard'?candidates[0]:candidates[Math.floor(Math.random()*Math.min(candidates.length,x.difficulty==='easy'?candidates.length:4))];return applyBanqi(x,p,pick);}
-  if(covered.length){const pick=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r:pick[0],c:pick[1]});}
+  if(captures.length){
+    captures.sort((a,b)=>b.score-a.score);
+    const pick=x.difficulty==='hard'?captures[0]:captures[Math.floor(Math.random()*Math.min(captures.length, x.difficulty==='easy'?captures.length:4))];
+    return applyBanqi(x,p,pick);
+  }
+  if(moves.length)return applyBanqi(x,p,moves[Math.floor(Math.random()*Math.min(moves.length,8))]);
+  if(covered.length){const [r,c]=covered[Math.floor(Math.random()*covered.length)];return applyBanqi(x,p,{action:'flip',r,c});}
   return{error:'AI 沒有合法動作'};
 }
 function aiCheckersMove(x){
-  const p={pid:'ai',name:'電腦',color:'p1'},g=x.g;if(g.chain?.pid==='ai'){const from=g.chain.pos;for(const [dq,dr] of CHECKER_DIRS){const [q,r]=from.split(',').map(Number),to=checkerCubeKey(q+dq*2,r+dr*2);if(checkerCanJump(x,from,to))return applyCheckers(x,p,{from,to});}return stopCheckerChain(x,p);}
-  const moves=[];for(const [id,occ] of Object.entries(g.board))if(occ==='p1'){for(const n of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,n))moves.push({from:id,to:n,score:1});for(const [dq,dr] of CHECKER_DIRS){const [q,r]=id.split(',').map(Number),to=checkerCubeKey(q+dq*2,r+dr*2);if(checkerCanJump(x,id,to))moves.push({from:id,to,score:6});}}
-  if(!moves.length)return null;const pick=moves[Math.floor(Math.random()*moves.length)];return applyCheckers(x,p,pick);
+  const p={pid:'ai',name:'電腦',color:x.aiColor||'blue'},g=x.g;
+  if(g.chain?.pid==='ai'){
+    const from=g.chain.pos;
+    for(const to of checkerJumpTargets(from))if(checkerCanJump(x,from,to))return applyCheckers(x,p,{from,to});
+    return stopCheckerChain(x,p);
+  }
+  const moves=[];
+  for(const [id,occ] of Object.entries(g.board))if(occ===p.color){
+    for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to))moves.push({from:id,to,score:1});
+    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to))moves.push({from:id,to,score:6});
+  }
+  if(!moves.length)return null;
+  return applyCheckers(x,p,moves[Math.floor(Math.random()*moves.length)]);
 }
 function aiTurn(x){
   if(!x.ai||x.g.winner)return;
@@ -822,4 +949,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.2 multi-game on ${PORT}`));
