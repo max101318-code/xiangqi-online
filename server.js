@@ -75,6 +75,8 @@ function banqiLabel(piece){
 }
 function banqiCanEat(att,def){
   if(!att||!def||att.color===def.color)return false;
+  // 客製規則：卒不能吃炮；除卒外，其他棋種都可以吃炮。
+  if(def.type==='cannon')return att.type!=='pawn';
   if(att.type==='pawn'&&def.type==='king')return true;
   if(att.type==='king'&&def.type==='pawn')return false;
   return BANQI_RANK[att.type]>=BANQI_RANK[def.type];
@@ -173,21 +175,25 @@ function applyBanqi(x,p,m){
     const wasCovered=!target.revealed;
     if(x.mode==='banqi'&&wasCovered)return{error:'明棋不能吃未翻開的暗棋'};
     if(x.mode==='darkbanqi'&&wasCovered){
+      const revealBefore=clone(g);
       target.revealed=true;
       if(target.color===p.color){
         g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blockedByFriend:true});
+        x.undoStack.push(revealBefore);
         g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
       }
       // 暗棋的炮依然是特殊棋：對已翻開目標可跨子吃；但踩到未翻開且目標階級更大時仍依規格中斷連吃。
       if(attacker.type!=='cannon'&&BANQI_RANK[target.type]>BANQI_RANK[attacker.type]){
         g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
+        x.undoStack.push(revealBefore);
         g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
       }
       if(attacker.type==='cannon'&&BANQI_RANK[target.type]>BANQI_RANK[attacker.type]){
         // 炮仍需隔一子才可能飛吃；若不滿足炮架規則，保持原地並換手。
         if(!banqiCaptureRule(attacker,target,g.board,r,c,toR,toC)){
           g.history.push({n:g.move,color:p.color,piece:banqiLabel(attacker),from:[r+1,c+1],to:[toR+1,toC+1],reveal:true,revealedPiece:banqiLabel(target),blocked:true});
-          g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
+          x.undoStack.push(revealBefore);
+        g.move++;g.chain=null;g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};
         }
       }
     }
@@ -232,9 +238,16 @@ function hasBanqiChainCapture(x,pid,r,c){
 function stopBanqiChain(x,p){if(x.mode!=='darkbanqi'||!x.g.chain||x.g.chain.pid!==p.pid)return{error:'目前沒有你的連吃回合'};x.g.chain=null;x.g.turn=banqiNextPid(x,p.pid);setTurnDeadline(x);return{ok:true};}
 
 const CHECKER_HOLES=[{id:'h0',x:0.271429,y:0.163265,camp:0},{id:'h1',x:0.730000,y:0.164723,camp:1},{id:'h2',x:0.671429,y:0.193878,camp:1},{id:'h3',x:0.328571,y:0.198251,camp:0},{id:'h4',x:0.727143,y:0.225948,camp:1},{id:'h5',x:0.615714,y:0.228863,camp:1},{id:'h6',x:0.387143,y:0.230321,camp:0},{id:'h7',x:0.271429,y:0.231778,camp:0},{id:'h8',x:0.560000,y:0.260933,camp:1},{id:'h9',x:0.672857,y:0.260933,camp:1},{id:'h10',x:0.444286,y:0.263848,camp:0},{id:'h11',x:0.328571,y:0.265306,camp:0},{id:'h12',x:0.615714,y:0.293003,camp:1},{id:'h13',x:0.731429,y:0.294461,camp:1},{id:'h14',x:0.501429,y:0.295918,camp:-1},{id:'h15',x:0.387143,y:0.298834,camp:0},{id:'h16',x:0.272857,y:0.300292,camp:0},{id:'h17',x:0.672857,y:0.326531,camp:1},{id:'h18',x:0.558571,y:0.329446,camp:-1},{id:'h19',x:0.442857,y:0.330904,camp:-1},{id:'h20',x:0.330000,y:0.333819,camp:0},{id:'h21',x:0.731429,y:0.360058,camp:1},{id:'h22',x:0.615714,y:0.362974,camp:-1},{id:'h23',x:0.272857,y:0.364431,camp:0},{id:'h24',x:0.500000,y:0.364431,camp:-1},{id:'h25',x:0.387143,y:0.365889,camp:-1},{id:'h26',x:0.672857,y:0.396501,camp:-1},{id:'h27',x:0.331429,y:0.397959,camp:-1},{id:'h28',x:0.558571,y:0.397959,camp:-1},{id:'h29',x:0.444286,y:0.399417,camp:-1},{id:'h30',x:0.730000,y:0.430029,camp:-1},{id:'h31',x:0.388571,y:0.431487,camp:-1},{id:'h32',x:0.614286,y:0.431487,camp:-1},{id:'h33',x:0.501429,y:0.432945,camp:-1},{id:'h34',x:0.272857,y:0.434402,camp:-1},{id:'h35',x:0.787143,y:0.462099,camp:2},{id:'h36',x:0.444286,y:0.465015,camp:-1},{id:'h37',x:0.671429,y:0.465015,camp:-1},{id:'h38',x:0.217143,y:0.466472,camp:5},{id:'h39',x:0.558571,y:0.466472,camp:-1},{id:'h40',x:0.330000,y:0.467930,camp:-1},{id:'h41',x:0.844286,y:0.495627,camp:2},{id:'h42',x:0.502857,y:0.497085,camp:-1},{id:'h43',x:0.730000,y:0.497085,camp:-1},{id:'h44',x:0.275714,y:0.500000,camp:-1},{id:'h45',x:0.388571,y:0.500000,camp:-1},{id:'h46',x:0.615714,y:0.500000,camp:-1},{id:'h47',x:0.160000,y:0.501458,camp:5},{id:'h48',x:0.901429,y:0.529155,camp:2},{id:'h49',x:0.560000,y:0.530612,camp:-1},{id:'h50',x:0.785714,y:0.530612,camp:2},{id:'h51',x:0.331429,y:0.532070,camp:-1},{id:'h52',x:0.672857,y:0.532070,camp:-1},{id:'h53',x:0.101429,y:0.534985,camp:5},{id:'h54',x:0.218571,y:0.534985,camp:5},{id:'h55',x:0.444286,y:0.534985,camp:-1},{id:'h56',x:0.958571,y:0.562682,camp:2},{id:'h57',x:0.615714,y:0.564140,camp:-1},{id:'h58',x:0.844286,y:0.564140,camp:2},{id:'h59',x:0.275714,y:0.565598,camp:-1},{id:'h60',x:0.388571,y:0.565598,camp:-1},{id:'h61',x:0.730000,y:0.565598,camp:-1},{id:'h62',x:0.160000,y:0.567055,camp:5},{id:'h63',x:0.501429,y:0.567055,camp:-1},{id:'h64',x:0.045714,y:0.569971,camp:5},{id:'h65',x:0.674286,y:0.597668,camp:-1},{id:'h66',x:0.901429,y:0.597668,camp:2},{id:'h67',x:0.447143,y:0.599125,camp:-1},{id:'h68',x:0.560000,y:0.599125,camp:-1},{id:'h69',x:0.787143,y:0.599125,camp:2},{id:'h70',x:0.217143,y:0.600583,camp:5},{id:'h71',x:0.331429,y:0.600583,camp:-1},{id:'h72',x:0.104286,y:0.602041,camp:5},{id:'h73',x:0.731429,y:0.628280,camp:-1},{id:'h74',x:0.844286,y:0.631195,camp:2},{id:'h75',x:0.388571,y:0.632653,camp:-1},{id:'h76',x:0.502857,y:0.632653,camp:-1},{id:'h77',x:0.615714,y:0.632653,camp:-1},{id:'h78',x:0.275714,y:0.634111,camp:-1},{id:'h79',x:0.160000,y:0.635569,camp:5},{id:'h80',x:0.787143,y:0.661808,camp:2},{id:'h81',x:0.447143,y:0.666181,camp:-1},{id:'h82',x:0.560000,y:0.666181,camp:-1},{id:'h83',x:0.674286,y:0.666181,camp:-1},{id:'h84',x:0.331429,y:0.667638,camp:-1},{id:'h85',x:0.217143,y:0.669096,camp:5},{id:'h86',x:0.502857,y:0.698251,camp:-1},{id:'h87',x:0.618571,y:0.698251,camp:-1},{id:'h88',x:0.731429,y:0.698251,camp:-1},{id:'h89',x:0.388571,y:0.701166,camp:-1},{id:'h90',x:0.275714,y:0.702624,camp:-1},{id:'h91',x:0.674286,y:0.731778,camp:-1},{id:'h92',x:0.447143,y:0.733236,camp:-1},{id:'h93',x:0.561429,y:0.733236,camp:-1},{id:'h94',x:0.331429,y:0.736152,camp:-1},{id:'h95',x:0.731429,y:0.763848,camp:3},{id:'h96',x:0.618571,y:0.765306,camp:-1},{id:'h97',x:0.502857,y:0.766764,camp:-1},{id:'h98',x:0.277143,y:0.768222,camp:4},{id:'h99',x:0.388571,y:0.768222,camp:-1},{id:'h100',x:0.674286,y:0.798834,camp:3},{id:'h101',x:0.447143,y:0.800292,camp:-1},{id:'h102',x:0.560000,y:0.800292,camp:-1},{id:'h103',x:0.332857,y:0.801749,camp:4},{id:'h104',x:0.732857,y:0.832362,camp:3},{id:'h105',x:0.275714,y:0.833819,camp:4},{id:'h106',x:0.502857,y:0.833819,camp:-1},{id:'h107',x:0.618571,y:0.833819,camp:3},{id:'h108',x:0.390000,y:0.835277,camp:4},{id:'h109',x:0.447143,y:0.867347,camp:4},{id:'h110',x:0.561429,y:0.867347,camp:3},{id:'h111',x:0.674286,y:0.867347,camp:3},{id:'h112',x:0.335714,y:0.868805,camp:4},{id:'h113',x:0.618571,y:0.899417,camp:3},{id:'h114',x:0.731429,y:0.899417,camp:3},{id:'h115',x:0.277143,y:0.902332,camp:4},{id:'h116',x:0.391429,y:0.902332,camp:4},{id:'h117',x:0.674286,y:0.932945,camp:3},{id:'h118',x:0.335714,y:0.934402,camp:4},{id:'h119',x:0.732857,y:0.966472,camp:3},{id:'h120',x:0.278571,y:0.969388,camp:4}];
-const CHECKER_CAMPS=[['h0','h3','h7','h11','h6','h16','h15','h20','h23','h10'],['h1','h4','h2','h9','h13','h5','h17','h12','h21','h8'],['h56','h66','h48','h58','h74','h41','h69','h50','h80','h35'],['h119','h114','h117','h111','h104','h113','h107','h100','h110','h95'],['h120','h115','h118','h112','h116','h105','h108','h103','h109','h98'],['h64','h53','h72','h62','h47','h79','h70','h54','h38','h85']];
+const CHECKER_CAMPS=[
+  ['h0','h3','h7','h6','h11','h16','h10','h15','h20','h23','h14','h19','h25','h27','h34'],
+  ['h1','h4','h2','h13','h9','h5','h21','h17','h12','h8','h30','h26','h22','h18','h14'],
+  ['h56','h48','h66','h41','h58','h74','h35','h50','h69','h80','h30','h43','h61','h73','h88'],
+  ['h119','h117','h114','h113','h111','h104','h110','h107','h100','h95','h106','h102','h96','h91','h88'],
+  ['h120','h115','h118','h105','h112','h116','h98','h103','h108','h109','h90','h94','h99','h101','h106'],
+  ['h64','h53','h72','h47','h62','h79','h38','h54','h70','h85','h34','h44','h59','h78','h90']
+];
 const CHECKER_COLOR_LABELS={red:'紅色',blue:'藍色',green:'綠色'};
-const CHECKER_COLOR_ARM={green:0,red:1,blue:2};
+const CHECKER_COLOR_ARM={green:0,blue:2,red:4};
 const CHECKER_COLORS=['red','blue','green'];
 function checkerColorLabel(c){return CHECKER_COLOR_LABELS[c]||'待定';}
 function checkerArm(di){return (CHECKER_CAMPS[di]||[]).slice();}
@@ -309,8 +322,19 @@ function checkerInit(x){
 }
 function checkerActivePlayers(x){return [...x.players.filter(p=>p.connected!==false),...(x.ai?[{pid:'ai',color:x.aiColor||'blue',connected:true}]:[])];}
 function checkerCanStep(x,pid,from,to){const n=checkerNeighbors(from);if(!n.includes(to)||x.g.board[to])return false;return CHECKER_HOLE_SET.has(to);}
-function checkerCanJump(x,from,to){const [q,r]=from.split(',').map(Number),[tq,tr]=to.split(',').map(Number),dq=tq-q,dr=tr-r;const dirOK=(dq===2&&dr===-2)||(dq===2&&dr===0)||(dq===0&&dr===2)||(dq===-2&&dr===2)||(dq===-2&&dr===0)||(dq===0&&dr===-2);if(!dirOK)return false;const mq=q+dq/2,mr=r+dr/2,mid=checkerCubeKey(mq,mr);return CHECKER_HOLE_SET.has(to)&&!!x.g.board[mid]&&!x.g.board[to];}
-function checkerHasAnyMove(x,pid,fromOverride=null){const p=checkerPlayerByPid(x,pid);if(!p)return false;for(const [id,occ] of Object.entries(x.g.board))if(occ===p.color){for(const n of checkerNeighbors(id))if(checkerCanStep(x,pid,id,n))return true;for(const [dq,dr] of CHECKER_DIRS){const [q,r]=id.split(',').map(Number),to=checkerCubeKey(q+dq*2,r+dr*2);if(checkerCanJump(x,id,to))return true;}}return false;}
+function checkerCanJump(x,from,to){
+  const jump=(CHECKER_GRAPH.jumps[from]||[]).find(j=>j.to===to);
+  return !!jump && !!x.g.board[jump.mid] && !x.g.board[to];
+}
+function checkerHasAnyMove(x,pid){
+  const p=checkerPlayerByPid(x,pid);if(!p)return false;
+  for(const [id,occ] of Object.entries(x.g.board)){
+    if(occ!==p.color)continue;
+    for(const n of checkerNeighbors(id))if(checkerCanStep(x,pid,id,n))return true;
+    for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to))return true;
+  }
+  return false;
+}
 function checkerWon(x,p){const target=p.targetCamp||(p.pid==='ai'?x.aiTargetCamp:[]),count=target.length;let filled=0;for(const id of target){const occ=x.g.board[id];if(occ===p.color)filled++;else if(occ){const blocker=(x.ai&&occ===x.aiColor)?checkerPlayerByPid(x,'ai'):x.players.find(q=>q.color===occ);if(blocker&&!checkerHasAnyMove(x,blocker.pid))filled++;}}return count>0&&filled>=count;}
 function nextCheckerPid(x,pid){const ps=checkerActivePlayers(x),i=ps.findIndex(q=>q.pid===pid);return i<0?ps[0]?.pid:ps[(i+1)%ps.length]?.pid;}
 function applyCheckers(x,p,m){
@@ -323,7 +347,7 @@ function applyCheckers(x,p,m){
   else {if(checkerWon(x,p)){g.winner=p.color;g.winnerPid=p.pid;g.endedReason=`${p.name} 已將全部棋子移入目標大本營，獲勝！`;g.turn=null;g.turnDeadline=null;return{ok:true};}g.chain=null;g.turn=nextCheckerPid(x,p.pid);setTurnDeadline(x);}
   return{ok:true};
 }
-function checkerHasAnyJump(x,from){for(const [dq,dr] of CHECKER_DIRS){const [q,r]=from.split(',').map(Number),to=checkerCubeKey(q+dq*2,r+dr*2);if(checkerCanJump(x,from,to))return true;}return false;}
+function checkerHasAnyJump(x,from){for(const to of checkerJumpTargets(from))if(checkerCanJump(x,from,to))return true;return false;}
 function stopCheckerChain(x,p){if(!x.g.chain||x.g.chain.pid!==p.pid)return{error:'目前沒有你的連跳回合'};x.g.chain=null;x.g.turn=nextCheckerPid(x,p.pid);setTurnDeadline(x);return{ok:true};}
 
 function baseGame(mode){
@@ -405,8 +429,9 @@ function applyCheckersRpsResult(x,result){
 }
 function nameByPid(x,id){return id==='ai'?'電腦':x.players.find(p=>p.pid===id)?.name||'玩家';}
 function aiChooseCheckerColor(x){
-  if(!x.ai||x.rps?.phase!=='choose-color'||x.rps.colorTurnPid!=='ai')return;
+  if(!x.ai||x.rps?.phase!=='choose-color'||x.rps.colorTurnPid!=='ai')return false;
   // AI 選色冪等保護：如果前一次排程晚到，重新檢查目前真正的選色輪次。
+  if(Object.values(x.rps.colorChoices||{}).includes('ai'))return true;
   const choices=Object.keys(x.rps.colorChoices||{});
   const color=CHECKER_COLORS.find(c=>!choices.includes(c))||'red';
   x.rps.colorChoices[color]='ai';
@@ -421,7 +446,7 @@ function aiChooseCheckerColor(x){
     x.rps.colorTurnPid=rank[idx];
     x.rps.result=`電腦選擇${checkerColorLabel(color)}；輪到${nameByPid(x,rank[idx])}選擇下一個顏色。`;
     broadcast(x);
-    return;
+    return true;
   }
 
   const order=rank.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);
@@ -434,6 +459,7 @@ function aiChooseCheckerColor(x){
   x.rps.colorTurnPid=null;
   broadcast(x);
   if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
+  return true;
 }
 function chooseCheckerColor(x,p,color){
   if(x.rps.phase!=='choose-color')return'目前不是選色階段';
@@ -462,6 +488,7 @@ function chooseCheckerColor(x,p,color){
     return null;
   }
   x.rps.colorTurnPid=rank[idx];x.rps.result=`${p.name} 選擇${checkerColorLabel(color)}；輪到${nameByPid(x,rank[idx])}選擇下一個顏色。`;
+  if(x.rps.colorTurnPid==='ai'){x.aiProgressLockUntil=0;setTimeout(()=>aiChooseCheckerColor(x),180);}
   return null;
 }
 function resolveRps(x){
@@ -512,8 +539,12 @@ function resolveAiExtraRps(x){
   if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
 }
 function aiExtraRpsChoose(x){
-  if(!x.ai||x.rps?.phase!=='rps'||!x.players.length)return;
-  x.rps.choices.ai=['剪刀','石頭','布'][Math.floor(Math.random()*3)];resolveAiExtraRps(x);broadcast(x);
+  if(!x.ai||x.rps?.phase!=='rps'||!x.players.length)return false;
+  if(x.rps.choices?.ai)return true;
+  x.rps.choices.ai=['剪刀','石頭','布'][Math.floor(Math.random()*3)];
+  resolveAiExtraRps(x);
+  broadcast(x);
+  return true;
 }
 
 function own(t,color){ return color==='red' ? /[A-Z]/.test(t) : /[a-z]/.test(t); }
@@ -709,28 +740,35 @@ function confirmGoScore(x,p){
 }
 function aiProgressTick(x){
   if(!x?.ai||x.g?.winner)return;
+  const now=Date.now();
+  if(now < (x.aiProgressLockUntil||0))return;
   if(x.rps?.phase==='rps'){
-    if(!x.rps.choices?.ai) aiExtraRpsChoose(x);
+    if(!x.rps.choices?.ai){
+      x.aiProgressLockUntil=now+300;
+      aiExtraRpsChoose(x);
+    }
     return;
   }
   if(x.rps?.phase==='choose-color' && x.mode==='checkers' && x.rps.colorTurnPid==='ai'){
+    x.aiProgressLockUntil=now+300;
     aiChooseCheckerColor(x);
     return;
   }
-  if(x.rps?.phase==='done' && x.g?.turn==='ai') aiTurn(x);
+  if(x.rps?.phase==='done' && x.g?.turn==='ai'){
+    aiTurn(x);
+  }
 }
 function armAIWatchdog(x){
-  if(!x?.ai)return;
-  clearTimeout(x.aiWatchdogTimer);
-  const tick=()=>{
-    x.aiWatchdogTimer=setTimeout(()=>{aiProgressTick(x);if(!x.g.winner)tick();},700);
-  };
-  tick();
+  if(!x?.ai||x.aiWatchdogTimer)return;
+  x.aiWatchdogTimer=setInterval(()=>{
+    if(x.g?.winner){clearInterval(x.aiWatchdogTimer);x.aiWatchdogTimer=null;return;}
+    aiProgressTick(x);
+  },400);
 }
 function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
   mode=normalizeMode(mode);
   const cap=mode==='checkers'?(maxPlayers===3?3:2):2;
-  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null};
+  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0};
   if(isBanqi(mode))initBanqiBoard(x.g);
   if(mode==='checkers')x.g.holes=CHECKER_HOLES;
   if(ai)armAIWatchdog(x);
@@ -775,7 +813,8 @@ function timeOut(x){
   x.g.winner=winner;x.g.winnerPid=x.ai&&winner===x.players[0].color?x.players[0].pid:(!x.ai?x.players.find(p=>p.color===winner)?.pid:null);x.endedReason=`${loser}方超時，${winner}方獲勝！`;x.g.turnDeadline=null;broadcast(x);
 }
 function applyOnlineMove(x,p,m){
-  if(isExtraMode(x.mode)&&x.rps?.phase!=='done')return{error:'請先完成猜拳，現在還不能行動'};
+  if(isExtraMode(x.mode)&&x.rps?.phase==='rps')return{error:'目前正在猜拳階段，請先完成猜拳。'};
+  if(isExtraMode(x.mode)&&x.rps?.phase==='choose-color')return{error:x.mode==='checkers'?'目前正在選擇跳棋顏色，請等待輪到你選色。':'目前正在選擇棋子顏色，請先完成選色。'};
   if(isExtraMode(x.mode)){
     if(x.mode==='checkers')return applyCheckers(x,p,m);
     if(m.subaction) m.action=m.subaction;
@@ -873,10 +912,16 @@ function aiBanqiAction(x){
       }else{
         for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
           const rr=fromR+dr,cc=fromC+dc;if(rr<0||rr>=BANQI_ROWS||cc<0||cc>=BANQI_COLS)continue;
-          const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
+          const t=g.board[rr][cc];if(!t)continue;
           const test=t.revealed?t:Object.assign({},t,{revealed:true});
-          if(t.revealed?banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc): (x.mode==='darkbanqi'&&banqiCanEat(me,test)))
-            cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
+          if(t.revealed){
+            if(t.color!==me.color && banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc))
+              cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
+          }else if(x.mode==='darkbanqi'){
+            // 暗棋踩到未翻開棋必須先揭露；己方暗棋或無法吃的敵方暗棋都會使連吃停下，
+            // 只有真正能吃掉的暗棋才會把攻擊棋移到目標格。
+            cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:t.color===me.color?95:banqiCanEat(me,test)?105:90});
+          }
         }
       }
     }
@@ -919,12 +964,13 @@ function aiCheckersMove(x){
 }
 function aiTurn(x){
   if(!x.ai||x.g.winner)return;
+  if(Date.now()<(x.aiNextAt||0))return;
   // 防止同一回合被多個延遲任務重入。只要輪到 AI，就重新從當前盤面產生合法動作。
   x.aiTurnStartedAt=Date.now();
   if(isBanqi(x.mode)){
     if(x.g.turn!=='ai')return;
     const res=aiBanqiAction(x);
-    if(res?.ok){x.aiTurnRetries=0;broadcast(x);if(x.g.chain?.pid==='ai')setTimeout(()=>aiTurn(x),350);else if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);return;}
+    if(res?.ok){x.aiTurnRetries=0;x.aiNextAt=Date.now()+(x.g.chain?.pid==='ai'?330:420);broadcast(x);if(x.g.chain?.pid==='ai')setTimeout(()=>aiTurn(x),350);else if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);return;}
     x.aiTurnRetries=(x.aiTurnRetries||0)+1;
     if(x.aiTurnRetries<=8&&x.g.turn==='ai'){setTimeout(()=>aiTurn(x),180);return;}
     x.aiTurnRetries=0;
@@ -937,7 +983,7 @@ function aiTurn(x){
   if(x.mode==='checkers'){
     if(x.g.turn!=='ai')return;
     const res=aiCheckersMove(x);
-    if(res?.ok){x.aiTurnRetries=0;broadcast(x);if(x.g.chain?.pid==='ai')setTimeout(()=>aiTurn(x),350);else if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);return;}
+    if(res?.ok){x.aiTurnRetries=0;x.aiNextAt=Date.now()+(x.g.chain?.pid==='ai'?330:420);broadcast(x);if(x.g.chain?.pid==='ai')setTimeout(()=>aiTurn(x),350);else if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);return;}
     x.aiTurnRetries=(x.aiTurnRetries||0)+1;
     if(x.aiTurnRetries<=8&&x.g.turn==='ai'){setTimeout(()=>aiTurn(x),180);return;}
     x.aiTurnRetries=0;
@@ -951,7 +997,7 @@ function aiTurn(x){
   } else if(x.mode==='gomoku'){const a=aiGomokuMove(x.g,x.difficulty,ac);if(a)move={r:a[0],c:a[1]};}
   else {const mv=aiGoMove(x,x.difficulty);if(mv)move={r:mv.r,c:mv.c};}
   if(x.mode==='go'&&move===null){passGo(x,fake);broadcast(x);return;}
-  const res=applyOnlineMove(x,fake,move);if(res.ok){const checkId=x.checkEvent?.id;broadcast(x);if(checkId)setTimeout(()=>{if(x.checkEvent?.id===checkId){x.checkEvent=null;broadcast(x);}},1500);}
+  const res=applyOnlineMove(x,fake,move);if(res.ok){x.aiNextAt=Date.now()+420;const checkId=x.checkEvent?.id;broadcast(x);if(checkId)setTimeout(()=>{if(x.checkEvent?.id===checkId){x.checkEvent=null;broadcast(x);}},1500);}
 }
 function proposal(x,p,kind){
   if(x.g.winner)return'對局已結束';if(x.players.length<2)return'目前沒有對手';if(x.proposal)return'已有一個請求等待回覆';
@@ -975,7 +1021,7 @@ function inviteRematch(x,p){
 const server=http.createServer((req,res)=>{
   let u=req.url.split('?')[0];if(u==='/')u='/index.html';const file=path.join(pub,u);
   if(!file.startsWith(pub)||!fs.existsSync(file)){res.writeHead(404);return res.end('404');}
-  const mime={'.html':'text/html;charset=utf-8','.js':'text/javascript;charset=utf-8','.css':'text/css;charset=utf-8'}[path.extname(file)]||'application/octet-stream';
+  const mime={'.html':'text/html;charset=utf-8','.js':'text/javascript;charset=utf-8','.css':'text/css;charset=utf-8','.png':'image/png','.webp':'image/webp'}[path.extname(file)]||'application/octet-stream';
   res.writeHead(200,{'Content-Type':mime,'Cache-Control':'no-store'});fs.createReadStream(file).pipe(res);
 });
 const wss=new WebSocketServer({server});
@@ -1016,7 +1062,6 @@ wss.on('connection',ws=>{
       send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});
       broadcast(x);
     }else if(!x||!p)return;
-    else if(x?.ai)clearTimeout(x.aiWatchdogTimer);
     if(p.role==='spectator'){
       if(m.action==='leaveWatch'){x.spectators=x.spectators.filter(q=>q!==p);x=x;send(p,{type:'left-watch'});if(!x.players.length&&!x.spectators.length)rooms.delete(x.id);}
       else if(m.action==='chat')send(p,{type:'error',message:'觀戰模式目前僅能觀看，不能發送聊天訊息。'});
@@ -1086,6 +1131,7 @@ wss.on('connection',ws=>{
     }
   });
   ws.on('close',()=>{
+    if(x?.ai&&x.aiWatchdogTimer){clearInterval(x.aiWatchdogTimer);x.aiWatchdogTimer=null;} 
     if(p&&!x)removeFromMatchmaking(p);if(!x||!p)return;
     if(p.role==='spectator'){
       x.spectators=(x.spectators||[]).filter(q=>q!==p);
@@ -1099,4 +1145,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.2 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.6 multi-game on ${PORT}`));

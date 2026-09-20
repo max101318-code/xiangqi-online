@@ -143,7 +143,7 @@ function lobbyColorButtons(){
   if(state?.gameMode==='checkers'){
     const colors=[['red','🔴 紅色'],['blue','🔵 藍色'],['green','🟢 綠色']];
     const picked=state.rps?.colorChoices||{};const myTurn=state.rps?.colorTurnPid===myPid;
-    colors.forEach(([c,label])=>{const b=document.createElement('button');b.dataset.color=c;b.textContent=label;b.disabled=!myTurn||!!picked[c];b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b)});
+    colors.forEach(([c,label])=>{const b=document.createElement('button');b.dataset.color=c;b.textContent=label;b.disabled=(!myTurn)||!!picked[c];b.setAttribute('aria-disabled',String(b.disabled));b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b)});
     return;
   }
   const wrap2=$('color-buttons');const isXQ=state?.gameMode==='xiangqi';
@@ -229,7 +229,7 @@ function updateAiRpsPanel(){
   if(colorActive){
     const r=state.rps||{},picked=r.colorChoices||{},myTurn=r.colorTurnPid===myPid;
     $('ai-color-status').textContent=myTurn?'輪到你選顏色（紅／藍／綠）。':`等待${state.players?.find(p=>p.pid===r.colorTurnPid)?.name||'對手'}選顏色。`;
-    const wrap=$('ai-color-buttons');wrap.innerHTML='';[['red','🔴 紅色'],['blue','🔵 藍色'],['green','🟢 綠色']].forEach(([c,label])=>{const b=document.createElement('button');b.textContent=label;b.disabled=!myTurn||!!picked[c];b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b)});
+    const wrap=$('ai-color-buttons');wrap.innerHTML='';[['red','🔴 紅色'],['blue','🔵 藍色'],['green','🟢 綠色']].forEach(([c,label])=>{const b=document.createElement('button');b.textContent=label;b.disabled=(!myTurn)||!!picked[c];b.setAttribute('aria-disabled',String(b.disabled));b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b)});
   }
 }
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
@@ -281,6 +281,8 @@ function renderBanqiBoard(board,previousBoard=null,previousHistory=[]){
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const el=document.createElement('button');el.type='button';el.className='banqi-cell';el.dataset.r=r;el.dataset.c=c;
     const p=currentBoardCell(r,c);if(!p)el.classList.add('empty');else if(!p.revealed){el.classList.add('covered');el.innerHTML='<span class="banqi-cover-mark">暗</span>';}else{el.classList.add(p.color);el.textContent=banqiChar(p);if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');}
+    const last=state.history?.[state.history.length-1];
+    if(last?.reveal&&last.to?.[0]===r+1&&last.to?.[1]===c+1){el.classList.add('reveal-pulse');setTimeout(()=>el.classList.remove('reveal-pulse'),700);}
     el.onclick=()=>clickCell(r,c);board.appendChild(el);
   }
   if(previousBoard&&previousHistory?.length&&state.history?.length===previousHistory.length+1){
@@ -289,6 +291,7 @@ function renderBanqiBoard(board,previousBoard=null,previousHistory=[]){
 }
 function animateBanqiMove(board,previousBoard,move){
   if(move?.at&&!move.from)return;
+  if(move?.reveal&&!move?.captured)return;
   if(!move?.from||!move?.to)return;
   const [r1,c1]=move.from.map(v=>v-1),[r2,c2]=move.to.map(v=>v-1),src=previousBoard?.[r1]?.[c1];if(!src)return;
   const layer=document.createElement('div');layer.className='banqi-motion-layer';board.appendChild(layer);const rect=board.getBoundingClientRect();
@@ -301,7 +304,12 @@ function banqiChar(p){if(!p)return '';const names={king:p.color==='red'?'帥':'�
 function checkerNeighborIds(id){const [q,r]=id.split(',').map(Number);return [[1,-1],[1,0],[0,1],[-1,1],[-1,0],[0,-1]].map(([dq,dr])=>`${q+dq},${r+dr}`);}
 function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
-  const art=document.createElement('img');art.className='checker-reference-image';art.src='/checkers-board-reference.png';art.alt='跳棋棋盤';art.draggable=false;board.appendChild(art);
+  const art=document.createElement('img');
+  art.className='checker-reference-image';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.6';
+  art.alt='跳棋棋盤';art.draggable=false;
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.6';}};
+  board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){
     const el=document.createElement('button');el.type='button';el.className='checker-hole';
