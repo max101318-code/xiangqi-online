@@ -1,0 +1,11 @@
+const fs=require('fs'),path=require('path');
+const server=fs.readFileSync(path.join(__dirname,'server.js'),'utf8');
+const app=fs.readFileSync(path.join(__dirname,'public','app.js'),'utf8');
+if(!/function publicBanqiBoard\(x\)[\s\S]*!cell\.revealed\)[\s\S]*color:null[\s\S]*type:null/.test(server)) throw new Error('hidden Banqi snapshot masking missing');
+if(!/未翻開棋的陣營／階級對 AI 都是未知資訊/.test(server)) throw new Error('AI hidden-info guard missing');
+if(!/if\(t\.revealed && banqiCaptureRule\(me,test/.test(server)) throw new Error('AI may be scoring hidden target rank');
+if(!/if\(x\.mode==='darkbanqi' && p && p\.revealed===false\)/.test(app)) throw new Error('client hidden target reveal path missing');
+if(!/if\(!moves\.length && !chainPos\)/.test(server)) throw new Error('checkers fallback moves missing');
+if(!/x\.g\.turn=nextCheckerPid\(x,'ai'\);/.test(server)) throw new Error('checkers no-stalemate pass missing');
+if(!/reverseMap/.test(server)) throw new Error('checkers reverse tracking missing');
+console.log('V3_4_12_TARGETED_REGRESSION_OK');

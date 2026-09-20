@@ -311,9 +311,9 @@ function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
   const art=document.createElement('img');
   art.className='checker-reference-image';
-  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.11';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.12';
   art.alt='跳棋棋盤';art.draggable=false;
-  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.11';}};
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.12';}};
   board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){
@@ -451,9 +451,10 @@ function clickCell(r,c){
     }
     // 暗棋：吃向未翻開的己方棋時，不是切換選棋，而是送出「踩到暗棋」動作；
     // 伺服器會翻開目標、原攻擊棋留在原地並立即換手。
-    if(state.gameMode==='darkbanqi' && p.color===myColor && !p.revealed){
+    if(state.gameMode==='darkbanqi' && p && p.revealed===false){
+      // 未翻開棋對玩家而言連顏色都未知；暗棋可嘗試踩到它，伺服器決定是己方或敵方並揭露。
       send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});
-      selected=null;playSound('select');renderBoard();return;
+      selected=null;playSound('capture');renderBoard();return;
     }
     if(p.color===myColor){selected=[r,c];playSound('select');renderBoard();return;}
     send({action:'move',subaction:'capture',r:selected[0],c:selected[1],toR:r,toC:c});

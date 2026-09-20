@@ -119,3 +119,5 @@
 /* v3.4.7 banqi reveal feedback */
 .banqi-cell.reveal-pulse::before{animation:banqi-reveal-pulse .7s ease-out}
 @keyframes banqi-reveal-pulse{0%{box-shadow:0 0 0 0 rgba(103,220,165,.9),3px 3px 7px rgba(0,0,0,.24)}55%{box-shadow:0 0 0 8px rgba(103,220,165,0),3px 3px 7px rgba(0,0,0,.24)}100%{box-shadow:0 0 0 0 rgba(103,220,165,0),3px 3px 7px rgba(0,0,0,.24)}}
+
+/* v3.4.12 AI hidden-information + Chinese Checkers fallback fixes. */

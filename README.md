@@ -1,4 +1,4 @@
-## v3.4.11 修正
+## v3.4.12 修正
 - 暗棋：吃向未翻開的己方棋時，先翻開目標棋；攻擊棋留在原地，立即換手。
 - 暗棋／明棋 AI：同一回合會先建立所有己方棋子的合法候選，再嘗試執行，避免因單一棋子不能走而誤判整體無法行動。
 - 跳棋 AI：避免同一顆棋立即來回折返；連續反向達 2 次後不再選擇該反向。
@@ -68,3 +68,9 @@ Fixed revealed Banqi/暗棋 cannon pieces rendering blank by using the centraliz
 
 ## v3.4.10
 - 修正跳棋營地距離初始化順序：先建立 CHECKER_GRAPH，再計算營地距離，避免 Render 啟動時 ReferenceError。
+
+
+### v3.4.12
+- Banqi hidden pieces are treated as unknown to the AI; AI decision scoring never inspects hidden color/type.
+- Human-facing Banqi hidden cells are masked in network snapshots; Dark Banqi can still attempt a reveal/capture.
+- Chinese Checkers AI avoids repeated immediate reversals up to two times, falls back to any legal step/jump, and never declares a stalemate loss merely because no move is available.

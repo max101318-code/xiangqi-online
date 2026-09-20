@@ -820,7 +820,7 @@ function armAIWatchdog(x){
 function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
   mode=normalizeMode(mode);
   const cap=mode==='checkers'?(maxPlayers===3?3:2):2;
-  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0,aiLastMove:null,aiReverseCount:0};
+  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{},aiTurnRetries:0,aiWatchdogTimer:null,aiNextAt:0,aiLastMove:null,aiReverseCount:0,aiReverseMap:{}};
   if(isBanqi(mode))initBanqiBoard(x.g);
   if(mode==='checkers')x.g.holes=CHECKER_HOLES;
   if(ai)armAIWatchdog(x);
@@ -828,11 +828,22 @@ function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
 }
 function playerList(x){return x.players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null,connected:p.connected!==false,camp:p.camp||null,targetCamp:p.targetCamp||null})).concat(x.ai?[{pid:'ai',name:'電腦',avatar:'🤖',color:x.mode==='xiangqi'?'black':x.mode==='checkers'?(x.aiColor||'blue'):(x.aiColor||'white'),connected:true,camp:x.mode==='checkers'?(x.aiCamp||null):null,targetCamp:x.mode==='checkers'?(x.aiTargetCamp||null):null}]:[]);}
 function send(p,o){if(p?.ws?.readyState===1)p.ws.send(JSON.stringify(o));}
+function publicBanqiBoard(x){
+  return x.g.board.map(row=>row.map(cell=>{
+    if(!cell)return null;
+    if(!cell.revealed)return {id:cell.id,revealed:false,covered:true,color:null,type:null};
+    return {id:cell.id,revealed:true,covered:false,color:cell.color,type:cell.type};
+  }));
+}
+function publicExtraBoard(x,p){
+  if(isBanqi(x.mode))return publicBanqiBoard(x);
+  return x.g.b||x.g.board;
+}
 function setTurnDeadline(x){x.g.turnDeadline=x.g.turn?Date.now()+TURN_SECONDS*1000:null;}
 function publicSnapshot(x,p){
   const spectator=p.role==='spectator';
   const rps=x.rps?{phase:x.rps.phase,result:x.rps.result||null,winnerPid:x.rps.winnerPid||null,isRpsWinner:!spectator&&x.rps.winnerPid===p.pid,youChoice:!spectator?(x.rps.choices?.[p.pid]||null):null,hasOpponentChoice:spectator?false:(x.players.some(q=>q.pid!==p.pid&&x.rps.choices?.[q.pid])||(x.ai&&p.pid!=='ai'&&!!x.rps.choices?.ai))}:null;
-  return {type:'state',roomId:spectator?x.id:(x.ai||x.matchmade?null:x.id),spectatorCode:x.id,matchmade:!!x.matchmade,mode:spectator?'spectator':(x.ai?'ai':'online'),gameMode:x.mode,difficulty:x.difficulty||null,color:spectator?null:(p.color||null),turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,cols:x.g.cols||null,board:x.g.b||x.g.board,holes:x.g.holes||CHECKER_HOLES,camps:x.g.camps||x.checkerCamps||[],maxPlayers:x.maxPlayers||2,started:!!x.g.started,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),spectators:x.spectators?.length||0,rps:{...rps,activePids:x.rps?.activePids||null,rankOrder:x.rps?.rankOrder||null,colorChoices:x.rps?.colorChoices||{},colorTurnPid:x.rps?.colorTurnPid||null,rankPrefix:x.rps?.rankPrefix||null},roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:spectator?null:(x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null),proposal:spectator?null:(x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null),avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null,chain:x.g.chain||null};
+  return {type:'state',roomId:spectator?x.id:(x.ai||x.matchmade?null:x.id),spectatorCode:x.id,matchmade:!!x.matchmade,mode:spectator?'spectator':(x.ai?'ai':'online'),gameMode:x.mode,difficulty:x.difficulty||null,color:spectator?null:(p.color||null),turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,cols:x.g.cols||null,board:publicExtraBoard(x,p),holes:x.g.holes||CHECKER_HOLES,camps:x.g.camps||x.checkerCamps||[],maxPlayers:x.maxPlayers||2,started:!!x.g.started,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),spectators:x.spectators?.length||0,rps:{...rps,activePids:x.rps?.activePids||null,rankOrder:x.rps?.rankOrder||null,colorChoices:x.rps?.colorChoices||{},colorTurnPid:x.rps?.colorTurnPid||null,rankPrefix:x.rps?.rankPrefix||null},roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:spectator?null:(x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null),proposal:spectator?null:(x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null),avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null,chain:x.g.chain||null};
 }
 function broadcast(x){[...x.players,...(x.spectators||[])].forEach(p=>send(p,publicSnapshot(x,p)));}
 function broadcastLobbySync(x){
@@ -934,7 +945,7 @@ function banqiAICaptureCandidates(x,p){
       for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
         const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
         const test=t.revealed?t:Object.assign({},t,{revealed:true});
-        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:t.revealed?200:180});
+        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:t.revealed?200:170});
       }
     }else{
       for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
@@ -942,8 +953,8 @@ function banqiAICaptureCandidates(x,p){
         const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
         if(x.mode==='banqi'&&!t.revealed)continue;
         const test=t.revealed?t:Object.assign({},t,{revealed:true});
-        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:100+BANQI_RANK[test.type]});
-        else if(x.mode==='darkbanqi'&&!t.revealed&&!banqiCanEat(me,test))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:70});
+        if(t.revealed && banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:100+BANQI_RANK[test.type]});
+        else if(x.mode==='darkbanqi'&&!t.revealed)c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:70});
       }
     }
   }
@@ -980,7 +991,7 @@ function banqiAIAllCandidates(x,p){
       for(let rr=0;rr<BANQI_ROWS;rr++)for(let cc=0;cc<BANQI_COLS;cc++){
         const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
         const test=t.revealed?t:Object.assign({},t,{revealed:true});
-        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:120+(t.revealed?20:10)+Math.random()*3});
+        if(t.revealed && banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:140+Math.random()*3});
         else if(x.mode==='darkbanqi'&&!t.revealed)c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:80+Math.random()*3});
       }
     }else{
@@ -990,8 +1001,8 @@ function banqiAIAllCandidates(x,p){
         const t=g.board[rr][cc];if(!t||t.color===me.color)continue;
         if(x.mode==='banqi'&&!t.revealed)continue;
         const test=t.revealed?t:Object.assign({},t,{revealed:true});
-        if(banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:100+BANQI_RANK[test.type]+Math.random()*4});
-        else if(x.mode==='darkbanqi'&&!t.revealed)c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:t.color===me.color?95:70+Math.random()*3});
+        if(t.revealed && banqiCaptureRule(me,test,g.board,r,col,rr,cc))c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:100+BANQI_RANK[test.type]+Math.random()*4});
+        else if(x.mode==='darkbanqi'&&!t.revealed)c.push({action:'capture',r,c:col,toR:rr,toC:cc,score:70+Math.random()*3});
       }
     }
   }
@@ -1023,7 +1034,8 @@ function aiBanqiAction(x){
           if(t.revealed){
             if(t.color!==me.color&&banqiCaptureRule(me,test,g.board,fromR,fromC,rr,cc))cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:120});
           }else if(x.mode==='darkbanqi'){
-            cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:t.color===me.color?95:banqiCanEat(me,test)?105:90});
+            // 未翻開棋的陣營／階級對 AI 都是未知資訊；只知道可以嘗試踩。
+            cands.push({action:'capture',r:fromR,c:fromC,toR:rr,toC:cc,score:90});
           }
         }
       }
@@ -1060,55 +1072,73 @@ function checkerGoalDistance(x,id,color){
   return map&&Number.isFinite(map[id])?map[id]:Infinity;
 }
 function aiCheckersMove(x){
-  const p={pid:'ai',name:'電腦',color:x.aiColor||'red'},g=x.g;
-  if(!p.color)return null;
+  const p={pid:'ai',name:'電腦',color:'red'},g=x.g;
   const moves=[],last=x.aiLastMove||null;
   const chainPos=g.chain?.pid==='ai'?g.chain.pos:null;
-  const reverseCount=Number(x.aiReverseCount||0);
+  const reverseMap=x.aiReverseMap||{};
 
+  const isImmediateReverse=(m)=>!!(last&&last.from===m.to&&last.to===m.from);
+  const reverseKey=(m)=>`${m.from}>${m.to}`;
   const addMovesForPiece=(id,allowStep)=>{
     if(g.board[id]!==p.color)return;
     if(allowStep){
       for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to)){
+        const rev=isImmediateReverse({from:id,to});
+        const used=Number(reverseMap[reverseKey({from:to,to:id})]||0);
+        if(rev && used>=2)continue;
         const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
         const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
-        let score=progress*30-2+Math.random()*2;
-        const reversing=!!(last&&last.from===to&&last.to===id);
-        if(reversing&&reverseCount>=2)continue;
-        if(reversing)score-=220;
+        let score=progress*34-1+Math.random()*3;
+        if(rev)score-=180;
         moves.push({from:id,to,kind:'step',score});
       }
     }
     for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to)){
+      const rev=isImmediateReverse({from:id,to});
+      const used=Number(reverseMap[reverseKey({from:to,to:id})]||0);
+      if(rev && used>=2)continue;
       const d0=checkerGoalDistance(x,id,p.color),d1=checkerGoalDistance(x,to,p.color);
       const progress=Number.isFinite(d0)&&Number.isFinite(d1)?d0-d1:0;
-      let score=85+progress*36+Math.random()*2;
+      let score=84+progress*38+Math.random()*3;
       if(d1===0)score+=220;
-      const reversing=!!(last&&last.from===to&&last.to===id);
-      if(reversing&&reverseCount>=2)continue;
-      if(reversing)score-=320;
-      // 連跳中更偏好能繼續形成跳躍的落點，避免不必要折返。
-      if(chainPos && checkerHasAnyJump(x,to))score+=140;
+      if(rev)score-=300;
+      if(chainPos && checkerHasAnyJump(x,to))score+=150;
       moves.push({from:id,to,kind:'jump',score});
     }
   };
 
   if(chainPos){
-    // AI 連跳時只能使用同一顆棋，且只能再跳。
+    // 連跳中只能用同一顆棋，而且只能跳。
     addMovesForPiece(chainPos,false);
   }else{
     for(const [id,occ] of Object.entries(g.board))if(occ===p.color)addMovesForPiece(id,true);
   }
 
+  // 如果反向限制把候選全部濾掉，優先讓 AI 換另一顆棋；
+  // 若整盤真的只剩立即折返可動，也允許它做一次合法折返，避免假性「無合法走法」。
+  if(!moves.length && !chainPos){
+    for(const [id,occ] of Object.entries(g.board))if(occ===p.color){
+      for(const to of checkerNeighbors(id))if(checkerCanStep(x,'ai',id,to))moves.push({from:id,to,kind:'step',score:-50+Math.random()*2});
+      for(const to of checkerJumpTargets(id))if(checkerCanJump(x,id,to))moves.push({from:id,to,kind:'jump',score:20+Math.random()*2});
+    }
+  }
   if(!moves.length)return null;
+
   moves.sort((a,b)=>b.score-a.score);
   let pick=moves[0];
   if(x.difficulty==='easy')pick=moves[Math.floor(Math.random()*Math.min(6,moves.length))];
   else if(x.difficulty==='normal')pick=moves[Math.floor(Math.random()*Math.min(3,moves.length))];
+
   const res=applyCheckers(x,p,{from:pick.from,to:pick.to});
   if(res?.ok){
-    const reversing=!!(last&&last.from===pick.to&&last.to===pick.from);
-    x.aiReverseCount=reversing?reverseCount+1:0;
+    x.aiReverseMap=x.aiReverseMap||{};
+    const rev=isImmediateReverse(pick);
+    if(rev){
+      const k=reverseKey(pick);x.aiReverseMap[k]=(x.aiReverseMap[k]||0)+1;
+    }else{
+      // 只有立即折返鏈才累積；換其他棋子／方向就清掉舊折返壓力。
+      x.aiReverseMap={};
+    }
     x.aiLastMove={from:pick.from,to:pick.to,kind:pick.kind};
   }
   return res;
@@ -1139,7 +1169,12 @@ function aiTurn(x){
     x.aiTurnRetries=(x.aiTurnRetries||0)+1;
     if(x.aiTurnRetries<=8&&x.g.turn==='ai'){setTimeout(()=>aiTurn(x),180);return;}
     x.aiTurnRetries=0;
-    if(x.g.turn==='ai'&&!x.g.winner){x.g.winner=x.players[0]?.color||'red';x.g.winnerPid=x.players[0]?.pid||null;x.g.endedReason='電腦無法完成合法行動，你獲勝！';x.g.turn=null;x.g.turnDeadline=null;broadcast(x);}
+    if(x.g.turn==='ai'&&!x.g.winner){
+      x.g.chain=null;
+      x.g.turn=nextCheckerPid(x,'ai');
+      setTurnDeadline(x);
+      broadcast(x);
+    }
     return;
   }
   const ac=aiColor(x);if(x.g.turn!==ac)return;const fake={pid:'ai',color:ac};let move=null;
@@ -1266,7 +1301,7 @@ wss.on('connection',ws=>{
     }else if(m.action==='aiRematch'&&x.ai){
       x.g=newGame(x.mode);
       armAIWatchdog(x);
-      x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;x.aiLastMove=null;x.aiReverseCount=0;
+      x.undoStack=[];x.checkEvent=null;x.chat=[];x.aiTurnRetries=0;x.aiLastMove=null;x.aiReverseCount=0;x.aiReverseMap={};
       x.rps=newRps();
       if(isBanqi(x.mode)){
         p.color=null;x.aiColor=null;
