@@ -2,6 +2,6 @@ services:
   - type: web
     name: xiangqi-online
     runtime: node
-    buildCommand: npm ci
+    plan: free
+    buildCommand: npm install
     startCommand: npm start
-    healthCheckPath: /healthz
