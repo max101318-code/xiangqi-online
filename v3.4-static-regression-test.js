@@ -1,0 +1,15 @@
+const fs=require('fs'), path=require('path'), assert=require('assert');
+const root=__dirname, server=fs.readFileSync(path.join(root,'server.js'),'utf8'), app=fs.readFileSync(path.join(root,'public/app.js'),'utf8'), html=fs.readFileSync(path.join(root,'public/index.html'),'utf8'), css=fs.readFileSync(path.join(root,'public/style.css'),'utf8');
+assert(!/function resolveRps\(x\)\{[\s\S]*?function resolveRps\(x\)\{/.test(server),'duplicate resolveRps definition');
+assert(server.includes("const CHECKER_COLORS=['red','blue','green']"));
+assert(server.includes("x.mode==='checkers'"));
+assert(server.includes('function resolveCheckersRps'));
+assert(server.includes('function chooseCheckerColor'));
+assert(server.includes('x.checkerColorByPid'));
+assert(app.includes('checkerNeighborIds'));
+assert(app.includes('animateBanqiMove'));
+assert(app.includes('animateCheckerMove'));
+assert(html.includes('ai-color-panel'));
+assert(css.includes('.checker-star-art .camp-red')&&css.includes('.checker-star-art .camp-blue')&&css.includes('.checker-star-art .camp-green'));
+assert(css.includes('.checker-grid-line'));
+console.log('v3.4 static regression: OK');

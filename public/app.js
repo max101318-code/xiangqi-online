@@ -140,9 +140,15 @@ function handle(m){
 }
 function lobbyColorButtons(){
   const wrap=$('color-buttons');wrap.innerHTML='';
-  const isXQ=state?.gameMode==='xiangqi';
+  if(state?.gameMode==='checkers'){
+    const colors=[['red','🔴 紅色'],['blue','🔵 藍色'],['green','🟢 綠色']];
+    const picked=state.rps?.colorChoices||{};const myTurn=state.rps?.colorTurnPid===myPid;
+    colors.forEach(([c,label])=>{const b=document.createElement('button');b.dataset.color=c;b.textContent=label;b.disabled=!myTurn||!!picked[c];b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b)});
+    return;
+  }
+  const wrap2=$('color-buttons');const isXQ=state?.gameMode==='xiangqi';
   [['red',isXQ?'🔴 選紅方':'⚫ 選黑方'],['black',isXQ?'⚫ 選黑方':'⚪ 選白方']].forEach(([c,label])=>{
-    const b=document.createElement('button');b.dataset.color=c;b.textContent=label;b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b);
+    const b=document.createElement('button');b.dataset.color=c;b.textContent=label;b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap2.appendChild(b);
   });
 }
 function updateLobby(){
@@ -161,7 +167,9 @@ function updateLobby(){
     $('lobby-state-list').innerHTML=[`模式：${modeName(g)}`,`玩家：${Math.min(realPlayers,cap)}/${cap}`,state.rps?.result||'',g==='checkers'?`賽制：最多 3 人，本局 ${cap} 人`:'第一位翻開棋子後依棋面決定陣營。'].filter(Boolean).map(x=>`<div class="hist">${x}</div>`).join('');
     const rpsReady=(state.rps?.phase==='rps')&&(state.mode==='ai'||realPlayers>=cap);$('rps-panel').hidden=!rpsReady;
     if(rpsReady){let t=state.rps.result||'請出拳。';if(state.rps.youChoice)t='你已出拳，等待其他玩家…';if(state.rps.hasOpponentChoice&&!state.rps.youChoice)t='對方已出拳，請你出拳。';$('rps-status').textContent=t;document.querySelectorAll('[data-choice]').forEach(b=>b.disabled=!!state.rps.youChoice);}
-    $('color-panel').hidden=true;$('matchmaking-panel').hidden=true;
+    const checkColorPhase=g==='checkers'&&state.rps?.phase==='choose-color';
+    $('color-panel').hidden=!checkColorPhase;$('matchmaking-panel').hidden=true;
+    if(checkColorPhase){$('color-title').textContent='猜拳排名後依序選擇紅／藍／綠';$('color-status').textContent=state.rps.colorTurnPid===myPid?'輪到你選顏色。第三名會自動使用最後剩下的顏色。':`等待 ${ps.find(p=>p.pid===state.rps.colorTurnPid)?.name||'下一位玩家'} 選顏色。`;lobbyColorButtons();}
     $('lobby-room-wrap').classList.add('matchmaking-hidden');
     return;
   }
@@ -179,7 +187,7 @@ function updateLobby(){
   if(cp){$('color-title').textContent=g==='xiangqi'?'猜拳勝者選擇象棋顏色':'猜拳勝者選擇棋色';$('color-status').textContent=state.rps.isRpsWinner?`你勝出，請選${g==='xiangqi'?'紅方／黑方':'黑方／白方'}；你會先手。`:'你敗於猜拳，等待對方選色；你會後手。';lobbyColorButtons();document.querySelectorAll('#color-buttons button').forEach(b=>b.disabled=!state.rps.isRpsWinner);}
 }
 function showMatchmakingCleanup(){$('matchmaking-panel').hidden=true;$('lobby-room-wrap').classList.toggle('matchmaking-hidden',!!state?.matchmade);}
-function sideName(c,g){if(g==='xiangqi')return c==='red'?'紅方':c==='black'?'黑方':'待定';if(g==='checkers')return c&&/^p\d+$/.test(c)?`第${Number(c.slice(1))+1}位`:'待定';return c==='black'?'黑方':c==='white'?'白方':'待定';}
+function sideName(c,g){if(g==='xiangqi')return c==='red'?'紅方':c==='black'?'黑方':'待定';if(g==='checkers')return c==='red'?'🔴 紅色':c==='blue'?'🔵 藍色':c==='green'?'🟢 綠色':c&&/^p\d+$/.test(c)?`第${Number(c.slice(1))+1}位`:'待定';return c==='black'?'黑方':c==='white'?'白方':'待定';}
 function isMyTurn(){if(!state||state.mode==='spectator'||state.winner)return false;return isExtraMode(state.gameMode)?state.turn===myPid:state.turn===myColor;}
 function newModeCapacity(){return state?.gameMode==='checkers'?(Number(state?.maxPlayers)||2):2;}
 function renderState(previousBoard=null,previousHistory=[]){
@@ -209,20 +217,27 @@ function renderState(previousBoard=null,previousHistory=[]){
 function updateAiRpsPanel(){
   const panel=$('ai-rps-panel');if(!panel)return;
   const active=state?.mode==='ai'&&isExtraMode(state?.gameMode)&&state?.rps?.phase==='rps'&&!state?.winner;
-  panel.hidden=!active;if(!active)return;
-  const r=state.rps||{};
-  let t=r.result||'請出拳，和電腦決定先手。';
-  if(r.youChoice)t='你已出拳，等待電腦…';
-  else if(r.hasOpponentChoice)t='電腦已出拳，輪到你出拳。';
-  $('ai-rps-status').textContent=t;
-  document.querySelectorAll('[data-ai-rps-choice]').forEach(b=>b.disabled=!!r.youChoice);
+  panel.hidden=!active;
+  if(active){
+    const r=state.rps||{};let t=r.result||'請出拳。';
+    if(r.youChoice)t='你已出拳，等待電腦…';else if(r.hasOpponentChoice)t='電腦已出拳，輪到你出拳。';
+    $('ai-rps-status').textContent=t;document.querySelectorAll('[data-ai-rps-choice]').forEach(b=>b.disabled=!!r.youChoice);
+  }
+  const cp=$('ai-color-panel');if(!cp)return;
+  const colorActive=state?.mode==='ai'&&state?.gameMode==='checkers'&&state?.rps?.phase==='choose-color'&&!state?.winner;
+  cp.hidden=!colorActive;
+  if(colorActive){
+    const r=state.rps||{},picked=r.colorChoices||{},myTurn=r.colorTurnPid===myPid;
+    $('ai-color-status').textContent=myTurn?'輪到你選顏色（紅／藍／綠）。':`等待${state.players?.find(p=>p.pid===r.colorTurnPid)?.name||'對手'}選顏色。`;
+    const wrap=$('ai-color-buttons');wrap.innerHTML='';[['red','🔴 紅色'],['blue','🔵 藍色'],['green','🟢 綠色']].forEach(([c,label])=>{const b=document.createElement('button');b.textContent=label;b.disabled=!myTurn||!!picked[c];b.onclick=()=>{send({action:'chooseColor',color:c});playSound('move')};wrap.appendChild(b)});
+  }
 }
 function difficultyName(v){return v==='easy'?'簡單':v==='hard'?'困難':'普通';}
 function currentBoardCell(r,c){return state?.board?.[r]?.[c]??null;}
 function renderBoard(previousBoard=null,previousHistory=[]){
   const board=$('board');board.className='';
   const g=state?.gameMode||'xiangqi';board.dataset.mode=g;
-  if(g==='xiangqi')renderXiangqiBoard(board,previousBoard,previousHistory);else if(g==='gomoku'||g==='go')renderGridBoard(board,g,previousHistory);else if(isBanqiMode(g))renderBanqiBoard(board);else renderCheckersBoard(board);
+  if(g==='xiangqi')renderXiangqiBoard(board,previousBoard,previousHistory);else if(g==='gomoku'||g==='go')renderGridBoard(board,g,previousHistory);else if(isBanqiMode(g))renderBanqiBoard(board,previousBoard,previousHistory);else renderCheckersBoard(board,previousBoard,previousHistory);
 }
 function renderXiangqiBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML=`<svg class="board-lines" viewBox="0 0 8 9" preserveAspectRatio="none"><path d="M0 0H8 M0 1H8 M0 2H8 M0 3H8 M0 4H8 M0 5H8 M0 6H8 M0 7H8 M0 8H8 M0 9H8 M0 0V9 M1 0V9 M2 0V9 M3 0V9 M4 0V9 M5 0V9 M6 0V9 M7 0V9 M8 0V9"/><path d="M3 0L5 2 M5 0L3 2 M3 7L5 9 M5 7L3 9"/><path d="M0 4.5H8" stroke-dasharray=".09 .09"/></svg><div class="river">楚河 <span>漢界</span></div><div id="board-points"></div>`;
@@ -261,17 +276,48 @@ function renderGridBoard(board,g,previousHistory=[]){
   }
 }
 
-function renderBanqiBoard(board){
+function renderBanqiBoard(board,previousBoard=null,previousHistory=[]){
   const rows=Number(state.rows)||8,cols=Number(state.cols)||4;board.innerHTML='';board.className='banqi-board';
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const el=document.createElement('button');el.type='button';el.className='banqi-cell';el.dataset.r=r;el.dataset.c=c;
-    const p=currentBoardCell(r,c);if(!p){el.classList.add('empty');}else if(!p.revealed){el.classList.add('covered');el.textContent='暗';}else{el.classList.add(p.color);el.textContent=({king:p.color==='red'?'帥':'將',advisor:p.color==='red'?'仕':'士',elephant:p.color==='red'?'相':'象',rook:p.color==='red'?'俥':'車',knight:p.color==='red'?'傌':'馬',pawn:p.color==='red'?'兵':'卒'})[p.type];if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');}
+    const p=currentBoardCell(r,c);if(!p)el.classList.add('empty');else if(!p.revealed){el.classList.add('covered');el.innerHTML='<span class="banqi-cover-mark">暗</span>';}else{el.classList.add(p.color);el.textContent=({king:p.color==='red'?'帥':'將',advisor:p.color==='red'?'仕':'士',elephant:p.color==='red'?'相':'象',rook:p.color==='red'?'俥':'車',knight:p.color==='red'?'傌':'馬',pawn:p.color==='red'?'兵':'卒'})[p.type];if(selected?.[0]===r&&selected?.[1]===c)el.classList.add('selected');}
     el.onclick=()=>clickCell(r,c);board.appendChild(el);
   }
+  if(previousBoard&&previousHistory?.length&&state.history?.length===previousHistory.length+1){
+    const last=state.history[state.history.length-1];animateBanqiMove(board,previousBoard,last);
+  }
 }
-function renderCheckersBoard(board){
-  board.innerHTML='';board.className='checkers-board';const holes=state.holes||[];
-  const minGap=1;holes.forEach(h=>{const el=document.createElement('button');el.type='button';el.className='checker-hole';el.style.left=`${h.x*100}%`;el.style.top=`${h.y*100}%`;el.dataset.id=h.id;const occ=state.board?.[h.id];if(occ)el.classList.add(occ);if(state.chain?.pid===myPid&&state.chain.pos===h.id)el.classList.add('chain-selected');if(selected===h.id)el.classList.add('selected');el.onclick=()=>clickCheckerHole(h.id);board.appendChild(el);});
+function animateBanqiMove(board,previousBoard,move){
+  if(move?.at&&!move.from)return;
+  if(!move?.from||!move?.to)return;
+  const [r1,c1]=move.from.map(v=>v-1),[r2,c2]=move.to.map(v=>v-1),src=previousBoard?.[r1]?.[c1];if(!src)return;
+  const layer=document.createElement('div');layer.className='banqi-motion-layer';board.appendChild(layer);const rect=board.getBoundingClientRect();
+  const center=(r,c)=>({x:(c+.5)/4*rect.width,y:(r+.5)/8*rect.height});const a=center(r1,c1),b=center(r2,c2);const piece=document.createElement('div');piece.className=`banqi-motion-piece ${src.color}`;piece.textContent=banqiChar(src);layer.appendChild(piece);
+  const distance=Math.hypot(b.x-a.x,b.y-a.y),capture=!!move.captured,duration=capture?520:360;
+  let keyframes;if(capture)keyframes=[{transform:`translate(${a.x}px,${a.y}px) translate(-50%,-50%) scale(.95)`},{transform:`translate(${(a.x+b.x)/2}px,${(a.y+b.y)/2-8}px) translate(-50%,-50%) scale(1.08)`},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1)`},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1.12)`,offset:.88},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1)`,offset:1}];else keyframes=[{transform:`translate(${a.x}px,${a.y}px) translate(-50%,-50%) scale(.96)`},{transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(1)` }];
+  const anim=piece.animate(keyframes,{duration,easing:'cubic-bezier(.22,.8,.25,1)',fill:'both'});anim.finished.catch(()=>{}).finally(()=>layer.remove());
+}
+function banqiChar(p){return ({king:p.color==='red'?'帥':'將',advisor:p.color==='red'?'仕':'士',elephant:p.color==='red'?'相':'象',rook:p.color==='red'?'俥':'車',cannon:p.color==='red'?'炮':'炮',knight:p.color==='red'?'傌':'馬',pawn:p.color==='red'?'兵':'卒'})[p.type]||'暗';}
+function checkerNeighborIds(id){const [q,r]=id.split(',').map(Number);return [[1,-1],[1,0],[0,1],[-1,1],[-1,0],[0,-1]].map(([dq,dr])=>`${q+dq},${r+dr}`);}
+function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
+  board.innerHTML='';board.className='checkers-board';
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('class','checker-star-art');svg.innerHTML=`
+    <polygon class="camp camp-green" points="20,50 35,25 25,5"/><polygon class="camp camp-red" points="65,25 80,50 75,5"/>
+    <polygon class="camp camp-blue" points="80,50 65,75 95,50"/><polygon class="camp camp-green" points="65,75 35,75 75,95"/>
+    <polygon class="camp camp-red" points="35,75 20,50 25,95"/><polygon class="camp camp-blue" points="20,50 35,25 5,50"/>
+    <polygon class="center-hex" points="35,25 65,25 80,50 65,75 35,75 20,50"/>`;
+  board.appendChild(svg);
+  const holes=state.holes||[];const holeMap=new Map(holes.map(h=>[h.id,h]));
+  // 清楚畫出所有相鄰棋孔之間的格線，讓六角星幾何結構完整可見。
+  const links=document.createElementNS('http://www.w3.org/2000/svg','svg');links.setAttribute('viewBox','0 0 100 100');links.setAttribute('class','checker-grid-art');
+  holes.forEach(h=>{for(const nid of checkerNeighborIds(h.id)){const n=holeMap.get(nid);if(!n||String(h.id)>String(n.id))continue;const line=document.createElementNS('http://www.w3.org/2000/svg','line');line.setAttribute('x1',(h.x*100).toFixed(3));line.setAttribute('y1',(h.y*100).toFixed(3));line.setAttribute('x2',(n.x*100).toFixed(3));line.setAttribute('y2',(n.y*100).toFixed(3));line.setAttribute('class','checker-grid-line');links.appendChild(line);}});board.appendChild(links);
+  holes.forEach(h=>{const el=document.createElement('button');el.type='button';el.className='checker-hole';el.style.left=`${h.x*100}%`;el.style.top=`${h.y*100}%`;el.dataset.id=h.id;const occ=state.board?.[h.id];if(occ){const pp=state.players?.find(p=>p.color===occ)||((occ===state.aiColor&&state.mode==='ai')?{color:occ}:null);el.classList.add(`stone-${pp?.color||occ}`);}if(state.chain?.pid===myPid&&state.chain.pos===h.id)el.classList.add('chain-selected');if(selected===h.id)el.classList.add('selected');el.onclick=()=>clickCheckerHole(h.id);board.appendChild(el);});
+  if(previousBoard&&previousHistory?.length&&state.history?.length===previousHistory.length+1){animateCheckerMove(board,previousBoard,state.history[state.history.length-1]);}
+}
+function animateCheckerMove(board,previousBoard,move){
+  if(!move?.from||!move?.to)return;const holes=new Map((state.holes||[]).map(h=>[h.id,h]));const a=holes.get(move.from),b=holes.get(move.to);if(!a||!b)return;
+  const occ=previousBoard?.[move.from];if(!occ)return;const player=state.players?.find(p=>p.color===occ);const color=player?.color||occ;const layer=document.createElement('div');layer.className='checker-motion-layer';board.appendChild(layer);const rect=board.getBoundingClientRect(),p1={x:a.x*rect.width,y:a.y*rect.height},p2={x:b.x*rect.width,y:b.y*rect.height};const piece=document.createElement('div');piece.className=`checker-motion-piece ${color}`;layer.appendChild(piece);
+  const jump=move.kind==='jump',duration=jump?460:300,dx=p2.x-p1.x,dy=p2.y-p1.y;let frames;if(jump){const lift=Math.max(18,Math.hypot(dx,dy)*.18);frames=[{transform:`translate(${p1.x}px,${p1.y}px) translate(-50%,-50%) scale(.9)`},{transform:`translate(${p1.x+dx*.5}px,${p1.y+dy*.5-lift}px) translate(-50%,-50%) scale(1.12)`},{transform:`translate(${p2.x}px,${p2.y}px) translate(-50%,-50%) scale(1)`}] }else frames=[{transform:`translate(${p1.x}px,${p1.y}px) translate(-50%,-50%) scale(.95)`},{transform:`translate(${p2.x}px,${p2.y}px) translate(-50%,-50%) scale(1)` }];const anim=piece.animate(frames,{duration,easing:'cubic-bezier(.2,.8,.25,1)',fill:'both'});anim.finished.catch(()=>{}).finally(()=>layer.remove());
 }
 function clickCheckerHole(id){if(!state||state.mode==='spectator'||state.winner||!isMyTurn())return;if(!selected){if(state.board?.[id]===myColor||state.board?.[id]===(state.players?.find(p=>p.pid===myPid)?.color)){selected=id;playSound('select');renderBoard();}return;}if(selected===id){selected=null;renderBoard();return;}send({action:'move',from:selected,to:id});selected=null;playSound('move');}
 function renderHistory(){

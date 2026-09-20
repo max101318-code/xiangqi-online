@@ -169,22 +169,39 @@ function checkerCamps(count){
   return picks.map(di=>checkerArm(di,count===2));
 }
 const CHECKER_DIRS=[[1,-1], [1,0], [0,1],[-1,1],[-1,0],[0,-1]];
+const CHECKER_COLORS=['red','blue','green'];
+const CHECKER_COLOR_LABELS={red:'紅色',blue:'藍色',green:'綠色'};
+const CHECKER_COLOR_ARM={red:0,blue:1,green:2};
+function checkerColorLabel(c){return CHECKER_COLOR_LABELS[c]||'待定';}
+function unusedCheckerColor(x){return CHECKER_COLORS.find(c=>!(x.checkerColorChoices||{})[c] && !(x.players||[]).some(p=>p.color===c))||null;}
 function checkerNeighbors(id){const [q,r]=id.split(',').map(Number);return CHECKER_DIRS.map(([dq,dr])=>checkerCubeKey(q+dq,r+dr));}
-function checkerPlayerByPid(x,pid){if(pid==='ai'&&x.ai)return{pid:'ai',name:'電腦',avatar:'🤖',color:'p1',connected:true};return x.players.find(p=>p.pid===pid)||null;}
+function checkerPlayerByPid(x,pid){if(pid==='ai'&&x.ai)return{pid:'ai',name:'電腦',avatar:'🤖',color:x.aiColor||'blue',connected:true};return x.players.find(p=>p.pid===pid)||null;}
 function checkerInit(x){
-  const count=x.maxPlayers, camps=checkerCamps(count), allCamps=Array.from({length:6},(_,di)=>checkerArm(di,count===2));x.checkerCamps=camps;
-  const pickIndices=count===2?[0,3]:count===3?[0,2,4]:count===4?[0,1,3,4]:[0,1,2,3,4,5];
-  x.players.forEach((p,i)=>{const ci=pickIndices[i];p.color=`p${i}`;p.camp=camps[i]||[];p.targetCamp=allCamps[(ci+3)%6]||[];});
-  if(x.ai){x.aiColor='p1';x.aiCamp=allCamps[1]||[];x.aiTargetCamp=allCamps[4]||allCamps[0]||[];}
-  const board={};x.players.forEach((p,i)=>{for(const id of camps[i]||[])board[id]=p.color;});
-  if(x.ai){for(const id of allCamps[1]||[])board[id]='p1';}
-  x.g.board=board;x.g.camps=camps;x.g.holes=CHECKER_HOLES;x.g.turn=x.players[0]?.pid||null;x.g.started=true;x.g.chain=null;x.g.turnDeadline=null;setTurnDeadline(x);
+  const count=x.maxPlayers===3?3:2;
+  const assigned=x.checkerColorByPid||{};
+  const allCamps=Array.from({length:6},(_,di)=>checkerArm(di,count===2));
+  x.checkerCamps=allCamps;
+  x.players.forEach(p=>{
+    const color=assigned[p.pid]||null;
+    const arm=CHECKER_COLOR_ARM[color];
+    p.color=color;p.camp=arm!=null?(allCamps[arm]||[]):[];p.targetCamp=arm!=null?(allCamps[(arm+3)%6]||[]):[];
+  });
+  if(x.ai){
+    const aiColor=assigned.ai||x.aiColor||null;
+    const arm=CHECKER_COLOR_ARM[aiColor];
+    x.aiColor=aiColor;x.aiCamp=arm!=null?(allCamps[arm]||[]):[];x.aiTargetCamp=arm!=null?(allCamps[(arm+3)%6]||[]):[];
+  }
+  const board={};
+  x.players.forEach((p)=>{if(!p.color)return;for(const id of p.camp||[])board[id]=p.color;});
+  if(x.ai&&x.aiColor){for(const id of x.aiCamp||[])board[id]=x.aiColor;}
+  x.g.board=board;x.g.camps=allCamps;x.g.holes=CHECKER_HOLES;x.g.turn=null;x.g.started=false;x.g.chain=null;x.g.turnDeadline=null;
+  return Object.keys(board).length>0;
 }
-function checkerActivePlayers(x){return [...x.players.filter(p=>p.connected!==false),...(x.ai?[{pid:'ai',color:'p1',connected:true}]:[])];}
+function checkerActivePlayers(x){return [...x.players.filter(p=>p.connected!==false),...(x.ai?[{pid:'ai',color:x.aiColor||'blue',connected:true}]:[])];}
 function checkerCanStep(x,pid,from,to){const n=checkerNeighbors(from);if(!n.includes(to)||x.g.board[to])return false;return CHECKER_HOLE_SET.has(to);}
 function checkerCanJump(x,from,to){const [q,r]=from.split(',').map(Number),[tq,tr]=to.split(',').map(Number),dq=tq-q,dr=tr-r;const dirOK=(dq===2&&dr===-2)||(dq===2&&dr===0)||(dq===0&&dr===2)||(dq===-2&&dr===2)||(dq===-2&&dr===0)||(dq===0&&dr===-2);if(!dirOK)return false;const mq=q+dq/2,mr=r+dr/2,mid=checkerCubeKey(mq,mr);return CHECKER_HOLE_SET.has(to)&&!!x.g.board[mid]&&!x.g.board[to];}
 function checkerHasAnyMove(x,pid,fromOverride=null){const p=checkerPlayerByPid(x,pid);if(!p)return false;for(const [id,occ] of Object.entries(x.g.board))if(occ===p.color){for(const n of checkerNeighbors(id))if(checkerCanStep(x,pid,id,n))return true;for(const [dq,dr] of CHECKER_DIRS){const [q,r]=id.split(',').map(Number),to=checkerCubeKey(q+dq*2,r+dr*2);if(checkerCanJump(x,id,to))return true;}}return false;}
-function checkerWon(x,p){const target=p.targetCamp||(p.pid==='ai'?x.aiTargetCamp:[]),count=target.length;let filled=0;for(const id of target){const occ=x.g.board[id];if(occ===p.color)filled++;else if(occ){const blocker=(occ==='p1'&&x.ai)?checkerPlayerByPid(x,'ai'):x.players.find(q=>q.color===occ);if(blocker&&!checkerHasAnyMove(x,blocker.pid))filled++;}}return count>0&&filled>=count;}
+function checkerWon(x,p){const target=p.targetCamp||(p.pid==='ai'?x.aiTargetCamp:[]),count=target.length;let filled=0;for(const id of target){const occ=x.g.board[id];if(occ===p.color)filled++;else if(occ){const blocker=(x.ai&&occ===x.aiColor)?checkerPlayerByPid(x,'ai'):x.players.find(q=>q.color===occ);if(blocker&&!checkerHasAnyMove(x,blocker.pid))filled++;}}return count>0&&filled>=count;}
 function nextCheckerPid(x,pid){const ps=checkerActivePlayers(x),i=ps.findIndex(q=>q.pid===pid);return i<0?ps[0]?.pid:ps[(i+1)%ps.length]?.pid;}
 function applyCheckers(x,p,m){
   const g=x.g;if(!g.started)return{error:'等待其他玩家加入'};if(g.winner)return{error:'遊戲已結束'};if(g.turn!==p.pid)return{error:'還沒輪到你'};
@@ -231,6 +248,106 @@ function resolveRpsChoices(x, choices){
   if(winners.length!==1)return {tie:true};
   return {tie:false,winnerPid:winners[0].pid,winnerName:winners[0].name};
 }
+function resolveCheckersRps(x, choices){
+  const ids=(x.rps.activePids||x.players.map(p=>p.pid).concat(x.ai?['ai']:[])).filter(id=>id==='ai'&&x.ai || x.players.some(p=>p.pid===id));
+  const entries=ids.map(id=>{const p=id==='ai'?{pid:'ai',name:'電腦'}:x.players.find(q=>q.pid===id);return {pid:id,name:p?.name||'玩家',choice:choices[id]};}).filter(v=>v.choice);
+  if(entries.length<ids.length)return null;
+  if(ids.length===2){
+    const r=resolveRpsChoices({...x,players:x.players.filter(p=>ids.includes(p.pid)),ai:x.ai&&ids.includes('ai')},choices);return r?{...r,activePids:ids}:r;
+  }
+  if(ids.length!==3)return null;
+  const score=new Map(ids.map(id=>[id,0]));
+  for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++){
+    const a=entries[i],b=entries[j];if(a.choice===b.choice)continue;
+    if(BEATS[a.choice]===b.choice)score.set(a.pid,score.get(a.pid)+1);else score.set(b.pid,score.get(b.pid)+1);
+  }
+  const ordered=[...ids].sort((a,b)=>score.get(b)-score.get(a));
+  const top=score.get(ordered[0]),tiesTop=ordered.filter(id=>score.get(id)===top);
+  if(tiesTop.length===3)return {tie:true,reset:true};
+  if(tiesTop.length===2){
+    const third=ordered.find(id=>!tiesTop.includes(id));
+    x.rps.rankPrefix= [third];
+    x.rps.rankPrefixAtEnd=true;
+    x.rps.activePids=tiesTop;
+    return {continue:true,message:'第一名平手，兩位玩家再猜拳決定前兩名。'};
+  }
+  const winner=ordered[0],rest=ordered.slice(1);
+  // The remaining two are tied for 2nd/3rd and must decide their order.
+  x.rps.rankPrefix=[winner];
+  x.rps.rankPrefixAtEnd=false;
+  x.rps.activePids=rest;
+  return {continue:true,message:`${x.players.find(p=>p.pid===winner)?.name||'玩家'}取得第一名，剩餘兩位再猜拳決定第二、第三名。`};
+}
+function applyCheckersRpsResult(x,result){
+  if(result?.tie){
+    x.g.turn=null;x.rps={phase:'rps',choices:{},result:result.reset?'平手！三人重新猜拳':'平手！請再猜一次',winnerPid:null,activePids:x.players.map(p=>p.pid)};return broadcast(x);
+  }
+  if(result?.continue){
+    x.g.turn=null;x.rps={...x.rps,phase:'rps',choices:{},result:result.message,winnerPid:null};return broadcast(x);
+  }
+  if(result?.winnerPid){
+    const activeNow=x.rps.activePids||x.players.map(p=>p.pid).concat(x.ai?['ai']:[]);let rank=[result.winnerPid,...activeNow.filter(id=>id!==result.winnerPid)];
+    if(x.rps.rankPrefixAtEnd && x.rps.rankPrefix?.length)rank=[...rank,...x.rps.rankPrefix.filter(id=>!rank.includes(id))];
+    else if(x.rps.rankPrefix?.length)rank=[...x.rps.rankPrefix,...rank.filter(id=>!x.rps.rankPrefix.includes(id))];
+    x.rps={...x.rps,phase:'choose-color',choices:{},result:`猜拳排名決定：第 1 名 ${nameByPid(x,rank[0])}，請依序選擇棋色。`,winnerPid:rank[0],rankOrder:rank,colorChoices:{},colorTurnIndex:0,colorTurnPid:rank[0],activePids:null};
+    x.g.turn=null;x.g.started=false;return broadcast(x);
+  }
+}
+function nameByPid(x,id){return id==='ai'?'電腦':x.players.find(p=>p.pid===id)?.name||'玩家';}
+function aiChooseCheckerColor(x){
+  if(!x.ai||x.rps?.phase!=='choose-color'||x.rps.colorTurnPid!=='ai')return;
+  const choices=Object.keys(x.rps.colorChoices||{});
+  const color=CHECKER_COLORS.find(c=>!choices.includes(c))||'red';
+  const aiP={pid:'ai',name:'電腦',color:x.aiColor};
+  x.rps.colorChoices[color]='ai';x.checkerColorByPid=x.checkerColorByPid||{};x.checkerColorByPid.ai=color;x.aiColor=color;
+  x.rps.colorTurnIndex=(x.rps.colorTurnIndex||0)+1;
+  const idx=x.rps.colorTurnIndex;
+  x.rps.result=`電腦選擇${checkerColorLabel(color)}；輪到${idx<x.rps.rankOrder.length?'下一位玩家選色。':'開始對局。'}`;
+  if(idx<x.rps.rankOrder.length){x.rps.colorTurnPid=x.rps.rankOrder[idx];}
+  if(idx>=x.rps.rankOrder.length){x.checkerColorOrder=x.rps.rankOrder.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);checkerInit(x);x.g.turn=x.rps.rankOrder[0];x.g.started=true;setTurnDeadline(x);}
+  broadcast(x);
+}
+function chooseCheckerColor(x,p,color){
+  if(x.rps.phase!=='choose-color')return'目前不是選色階段';
+  if(x.rps.colorTurnPid!==p.pid)return'現在不是你的選色順序';
+  if(!CHECKER_COLORS.includes(color))return'跳棋只能選紅、藍、綠三色';
+  const picked=Object.keys(x.rps.colorChoices||{});if(picked.includes(color))return'這個顏色已被選走';
+  x.rps.colorChoices[color]=p.pid;x.checkerColorByPid=x.checkerColorByPid||{};x.checkerColorByPid[p.pid]=color;p.color=color;
+  x.rps.colorTurnIndex=(x.rps.colorTurnIndex||0)+1;
+  const idx=x.rps.colorTurnIndex;const rank=x.rps.rankOrder||[];
+  // 3 人局：第一名選一色、第二名選一色，第三名直接使用最後剩下的顏色。
+  if(rank.length===3 && idx===2){
+    const remaining=CHECKER_COLORS.find(c=>!x.rps.colorChoices[c]);
+    const thirdPid=rank[2];
+    if(remaining){x.rps.colorChoices[remaining]=thirdPid;x.checkerColorByPid=x.checkerColorByPid||{};x.checkerColorByPid[thirdPid]=remaining;const third=x.players.find(q=>q.pid===thirdPid);if(third)third.color=remaining;}
+    const order=rank.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);
+    x.checkerColorOrder=order;checkerInit(x);x.g.turn=rank[0];x.g.started=true;setTurnDeadline(x);
+    x.rps.result=`選色完成：${rank.map((pid,i)=>`第${i+1}名 ${nameByPid(x,pid)}－${checkerColorLabel(order[i])}`).join('、')}。第三名使用剩餘顏色。`;
+    x.rps.colorTurnPid=null;return null;
+  }
+  if(idx>=rank.length){
+    const order=rank.map(pid=>Object.entries(x.rps.colorChoices).find(([c,v])=>v===pid)?.[0]).filter(Boolean);
+    x.checkerColorOrder=order;checkerInit(x);x.g.turn=rank[0];x.g.started=true;setTurnDeadline(x);x.rps.result=`選色完成：${rank.map((pid,i)=>`第${i+1}名 ${nameByPid(x,pid)}－${checkerColorLabel(order[i])}`).join('、')}`;x.rps.colorTurnPid=null;return null;
+  }
+  x.rps.colorTurnPid=rank[idx];x.rps.result=`${p.name} 選擇${checkerColorLabel(color)}；輪到${nameByPid(x,rank[idx])}選擇下一個顏色。`;
+  return null;
+}
+function resolveRps(x){
+  if(x.rps.phase!=='rps')return;
+  if(x.mode==='checkers'){
+    const result=resolveCheckersRps(x,x.rps.choices);if(!result)return;
+    if(result.continue){x.g.turn=null;x.rps.result=result.message; x.rps.choices={}; return broadcast(x);}
+    return applyCheckersRpsResult(x,result);
+  }
+  const result=resolveRpsChoices(x,x.rps.choices);if(!result)return;
+  if(result.tie){x.g.turn=null;x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};return broadcast(x);}
+  x.g.turn=null;
+  if(isExtraMode(x.mode)){
+    x.rps={phase:'done',choices:x.rps.choices,result:`${result.winnerName} 猜拳獲勝！由他先手。`,winnerPid:result.winnerPid};
+    x.g.turn=result.winnerPid;x.g.started=true;setTurnDeadline(x);return broadcast(x);
+  }
+  x.rps={phase:'choose-color',choices:{},result:`${result.winnerName} 猜拳獲勝！請選擇${x.mode==='xiangqi'?'紅方／黑方':'黑方／白方'}。`,winnerPid:result.winnerPid};broadcast(x);
+}
 function beginExtraAfterRps(x,winnerPid){
   x.rps.phase='done';x.rps.winnerPid=winnerPid;
   x.g.turn=winnerPid;x.g.started=true;setTurnDeadline(x);
@@ -239,17 +356,22 @@ function beginExtraAfterRps(x,winnerPid){
 }
 function resolveAiExtraRps(x){
   if(!x.ai||x.rps?.phase!=='rps'||!x.players.length)return;
+  if(x.mode==='checkers'){
+    const result=resolveCheckersRps(x,x.rps.choices);if(!result)return;
+    if(result.continue){x.g.turn=null;x.rps.result=result.message;x.rps.choices={};return broadcast(x);}
+    if(result.tie){return applyCheckersRpsResult(x,result);}
+    applyCheckersRpsResult(x,result);
+    if(x.rps.phase==='choose-color'&&x.rps.colorTurnPid==='ai')setTimeout(()=>aiChooseCheckerColor(x),350);
+    return;
+  }
   const result=resolveRpsChoices(x,x.rps.choices);if(!result)return;
-  if(result.tie){x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};broadcast(x);setTimeout(()=>aiExtraRpsChoose(x),650);return;}
-  x.g.turn=null;x.rps={phase:'done',choices:x.rps.choices,result:`${result.winnerName} 猜拳獲勝！先手。`,winnerPid:result.winnerPid};
-  if(x.mode==='checkers' && Object.keys(x.g.board||{}).length===0)checkerInit(x);
-  x.g.turn=result.winnerPid;x.g.started=true;setTurnDeadline(x);broadcast(x);
+  if(result.tie){x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};broadcast(x);return setTimeout(()=>aiExtraRpsChoose(x),650);}
+  x.g.turn=result.winnerPid;x.rps={phase:'done',choices:x.rps.choices,result:`${result.winnerName} 猜拳獲勝！先手。`,winnerPid:result.winnerPid};x.g.started=true;setTurnDeadline(x);broadcast(x);
   if(x.g.turn==='ai')setTimeout(()=>aiTurn(x),450);
 }
 function aiExtraRpsChoose(x){
   if(!x.ai||x.rps?.phase!=='rps'||!x.players.length)return;
-  x.rps.choices.ai=['剪刀','石頭','布'][Math.floor(Math.random()*3)];
-  resolveAiExtraRps(x);broadcast(x);
+  x.rps.choices.ai=['剪刀','石頭','布'][Math.floor(Math.random()*3)];resolveAiExtraRps(x);broadcast(x);
 }
 
 function own(t,color){ return color==='red' ? /[A-Z]/.test(t) : /[a-z]/.test(t); }
@@ -446,18 +568,18 @@ function confirmGoScore(x,p){
 function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
   mode=normalizeMode(mode);
   const cap=mode==='checkers'?(maxPlayers===3?3:2):2;
-  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[]};
+  const x={id:rid(),mode,ai,players:[],spectators:[],maxPlayers:cap,g:newGame(mode),rps:newRps(),difficulty:null,undoStack:[],checkEvent:null,proposal:null,rematchInvite:null,chat:[],matchmade:!!matchmade,checkerCamps:[],checkerColorByPid:{}};
   if(isBanqi(mode))initBanqiBoard(x.g);
   if(mode==='checkers')x.g.holes=CHECKER_HOLES;
   rooms.set(x.id,x);return x;
 }
-function playerList(x){return x.players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null,connected:p.connected!==false,camp:p.camp||null,targetCamp:p.targetCamp||null})).concat(x.ai?[{pid:'ai',name:'電腦',avatar:'🤖',color:x.mode==='xiangqi'?'black':x.mode==='checkers'?'p1':(x.aiColor||'white'),connected:true,camp:x.mode==='checkers'?(x.aiCamp||null):null,targetCamp:x.mode==='checkers'?(x.aiTargetCamp||null):null}]:[]);}
+function playerList(x){return x.players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null,connected:p.connected!==false,camp:p.camp||null,targetCamp:p.targetCamp||null})).concat(x.ai?[{pid:'ai',name:'電腦',avatar:'🤖',color:x.mode==='xiangqi'?'black':x.mode==='checkers'?(x.aiColor||'blue'):(x.aiColor||'white'),connected:true,camp:x.mode==='checkers'?(x.aiCamp||null):null,targetCamp:x.mode==='checkers'?(x.aiTargetCamp||null):null}]:[]);}
 function send(p,o){if(p?.ws?.readyState===1)p.ws.send(JSON.stringify(o));}
 function setTurnDeadline(x){x.g.turnDeadline=x.g.turn?Date.now()+TURN_SECONDS*1000:null;}
 function publicSnapshot(x,p){
   const spectator=p.role==='spectator';
   const rps=x.rps?{phase:x.rps.phase,result:x.rps.result||null,winnerPid:x.rps.winnerPid||null,isRpsWinner:!spectator&&x.rps.winnerPid===p.pid,youChoice:!spectator?(x.rps.choices?.[p.pid]||null):null,hasOpponentChoice:spectator?false:(x.players.some(q=>q.pid!==p.pid&&x.rps.choices?.[q.pid])||(x.ai&&p.pid!=='ai'&&!!x.rps.choices?.ai))}:null;
-  return {type:'state',roomId:spectator?x.id:(x.ai||x.matchmade?null:x.id),spectatorCode:x.id,matchmade:!!x.matchmade,mode:spectator?'spectator':(x.ai?'ai':'online'),gameMode:x.mode,difficulty:x.difficulty||null,color:spectator?null:(p.color||null),turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,cols:x.g.cols||null,board:x.g.b||x.g.board,holes:x.g.holes||CHECKER_HOLES,camps:x.g.camps||x.checkerCamps||[],maxPlayers:x.maxPlayers||2,started:!!x.g.started,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),spectators:x.spectators?.length||0,rps,roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:spectator?null:(x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null),proposal:spectator?null:(x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null),avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null,chain:x.g.chain||null};
+  return {type:'state',roomId:spectator?x.id:(x.ai||x.matchmade?null:x.id),spectatorCode:x.id,matchmade:!!x.matchmade,mode:spectator?'spectator':(x.ai?'ai':'online'),gameMode:x.mode,difficulty:x.difficulty||null,color:spectator?null:(p.color||null),turn:x.g.turn,winner:x.g.winner,winnerPid:x.g.winnerPid||null,endedReason:x.g.endedReason||null,size:x.g.size,rows:x.g.rows||x.g.size,cols:x.g.cols||null,board:x.g.b||x.g.board,holes:x.g.holes||CHECKER_HOLES,camps:x.g.camps||x.checkerCamps||[],maxPlayers:x.maxPlayers||2,started:!!x.g.started,history:x.g.history,move:x.g.move,turnDeadline:x.g.turnDeadline,players:playerList(x),spectators:x.spectators?.length||0,rps:{...rps,activePids:x.rps?.activePids||null,rankOrder:x.rps?.rankOrder||null,colorChoices:x.rps?.colorChoices||{},colorTurnPid:x.rps?.colorTurnPid||null,rankPrefix:x.rps?.rankPrefix||null},roundKey:x.g.roundKey,chat:x.chat||[],checkEvent:x.checkEvent||null,rematch:spectator?null:(x.rematchInvite?{pendingForMe:x.rematchInvite.toPid===p.pid,pendingByMe:x.rematchInvite.fromPid===p.pid}:null),proposal:spectator?null:(x.proposal?{kind:x.proposal.kind,fromPid:x.proposal.fromPid,fromName:x.proposal.fromName,toPid:x.proposal.toPid}:null),avatar:p.avatar,captures:x.g.captures||null,passStreak:x.g.passStreak||0,goPhase:x.g.phase||null,deadGroups:x.g.deadGroups||[],scoreConfirm:x.g.scoreConfirm||{},score:x.g.score||null,chain:x.g.chain||null};
 }
 function broadcast(x){[...x.players,...(x.spectators||[])].forEach(p=>send(p,publicSnapshot(x,p)));}
 function broadcastMatchmakingWaiting(item){send(item.p,{type:'matchmaking',status:'searching',mode:item.mode});}
@@ -465,29 +587,16 @@ function removeFromMatchmaking(p){for(let i=matchmakingQueue.length-1;i>=0;i--)i
 function tryMatchmaking(){
   for(let i=0;i<matchmakingQueue.length;i++){
     const first=matchmakingQueue[i];if(!first||first.cancelled||first.p.ws.readyState!==1){matchmakingQueue.splice(i--,1);continue;}
-    const need=first.capacity||2;if(need<=2){let j=-1;for(let k=i+1;k<matchmakingQueue.length;k++){const cand=matchmakingQueue[k];if(!cand||cand.cancelled||cand.p.ws.readyState!==1)continue;if(cand.mode===first.mode&&(cand.capacity||2)===need){j=k;break;}}if(j<0)continue;const second=matchmakingQueue[j];matchmakingQueue.splice(j,1);matchmakingQueue.splice(i,1);i--;const x=createRoom(first.mode,true,false,need);first.p.color=null;second.p.color=null;x.players.push(first.p,second.p);first.assign(x);second.assign(x);if(first.mode==='checkers')checkerInit(x);send(first.p,{type:'room',roomId:null,pid:first.p.pid,color:first.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});send(second.p,{type:'room',roomId:null,pid:second.p.pid,color:second.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});broadcast(x);continue;}
+    const need=first.capacity||2;if(need<=2){let j=-1;for(let k=i+1;k<matchmakingQueue.length;k++){const cand=matchmakingQueue[k];if(!cand||cand.cancelled||cand.p.ws.readyState!==1)continue;if(cand.mode===first.mode&&(cand.capacity||2)===need){j=k;break;}}if(j<0)continue;const second=matchmakingQueue[j];matchmakingQueue.splice(j,1);matchmakingQueue.splice(i,1);i--;const x=createRoom(first.mode,true,false,need);first.p.color=null;second.p.color=null;x.players.push(first.p,second.p);first.assign(x);second.assign(x);if(first.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;}send(first.p,{type:'room',roomId:null,pid:first.p.pid,color:first.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});send(second.p,{type:'room',roomId:null,pid:second.p.pid,color:second.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});broadcast(x);continue;}
     const group=[first];for(let k=i+1;k<matchmakingQueue.length&&group.length<need;k++){const cand=matchmakingQueue[k];if(!cand||cand.cancelled||cand.p.ws.readyState!==1)continue;if(cand.mode===first.mode&&(cand.capacity||2)===need)group.push(cand);}
     if(group.length<need)continue;
     for(const item of group){const idx=matchmakingQueue.indexOf(item);if(idx>=0)matchmakingQueue.splice(idx,1);}
-    const x=createRoom(first.mode,true,false,need);group.forEach(it=>{it.assign(x);it.p.color=null;x.players.push(it.p)});if(first.mode==='checkers')checkerInit(x);else if(isBanqi(first.mode)){x.g.started=true;x.g.turn=x.players[0].pid;setTurnDeadline(x);}
+    const x=createRoom(first.mode,true,false,need);group.forEach(it=>{it.assign(x);it.p.color=null;x.players.push(it.p)});if(first.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;}else if(isBanqi(first.mode)){x.g.started=true;x.g.turn=x.players[0].pid;setTurnDeadline(x);}
     group.forEach(it=>send(it.p,{type:'room',roomId:null,pid:it.p.pid,color:it.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id}));broadcast(x);i=-1;
   }
 }
-function resetOnlineRound(x){x.g=newGame(x.mode);x.players.forEach(p=>{p.color=null;p.camp=null;p.targetCamp=null});x.rps=newRps();x.rematchInvite=null;x.proposal=null;x.checkEvent=null;x.chat=[];if(isBanqi(x.mode))initBanqiBoard(x.g);if(x.mode==='checkers'&&x.players.length>=x.maxPlayers){checkerInit(x);x.g.turn=null;x.g.started=true;}}
+function resetOnlineRound(x){x.g=newGame(x.mode);x.players.forEach(p=>{p.color=null;p.camp=null;p.targetCamp=null});x.rps=newRps();x.rps.activePids=x.players.map(p=>p.pid);x.rematchInvite=null;x.proposal=null;x.checkEvent=null;x.chat=[];if(isBanqi(x.mode))initBanqiBoard(x.g);if(x.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;x.checkerColorOrder=[];} }
 function choosePalette(mode){return mode==='xiangqi'?['red','black']:['black','white'];}
-function resolveRps(x){
-  if(x.rps.phase!=='rps')return;
-  const result=resolveRpsChoices(x,x.rps.choices);if(!result)return;
-  if(result.tie){x.g.turn=null;x.rps={phase:'rps',choices:{},result:'平手！請再猜一次',winnerPid:null};return broadcast(x);}
-  x.g.turn=null;
-  if(isExtraMode(x.mode)){
-    x.rps={phase:'done',choices:x.rps.choices,result:`${result.winnerName} 猜拳獲勝！由他先手。`,winnerPid:result.winnerPid};
-    if(x.mode==='checkers'&&x.players.length>=x.maxPlayers){checkerInit(x);x.g.turn=result.winnerPid;x.g.started=true;}
-    else {x.g.turn=result.winnerPid;x.g.started=true;}
-    setTurnDeadline(x);return broadcast(x);
-  }
-  x.rps={phase:'choose-color',choices:{},result:`${result.winnerName} 猜拳獲勝！請選擇${x.mode==='xiangqi'?'紅方／黑方':'黑方／白方'}。`,winnerPid:result.winnerPid};broadcast(x);
-}
 function chooseColor(x,p,color){
   if(x.rps.phase!=='choose-color')return'目前不是選色階段';if(x.rps.winnerPid!==p.pid)return'你是猜拳落敗者，請等待對方選色';
   const palette=choosePalette(x.mode);if(!palette.includes(color))return'顏色無效';
@@ -637,14 +746,14 @@ wss.on('connection',ws=>{
     }else if(m.action==='ai'){
       const mode=normalizeMode(m.mode),difficulty=normalizeDifficulty(m.difficulty);x=createRoom(mode,false,true,2);x.difficulty=difficulty;
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家1').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
-      if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color='p0';checkerInit(x);x.g.turn=null;x.g.started=true;}
+      if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;}
       send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
       if(isExtraMode(mode))setTimeout(()=>aiExtraRpsChoose(x),500);
     }else if(m.action==='join'){
       x=rooms.get(String(m.roomId||'').trim().toUpperCase());
       if(!x||x.ai||x.players.length>=x.maxPlayers)return send({ws},{type:'error',message:'房間不存在、已滿，或這是人機房間'});
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
-      if(x.players.length===x.maxPlayers){ if(x.mode==='checkers'){checkerInit(x);x.g.turn=null;x.g.started=true;} else if(isBanqi(x.mode)){x.g.started=true;x.g.turn=null;setTurnDeadline(x);} }
+      if(x.players.length===x.maxPlayers){ if(x.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;} else if(isBanqi(x.mode)){x.g.started=true;x.g.turn=null;setTurnDeadline(x);} }
       send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});
       broadcast(x);
     }else if(!x||!p)return;
@@ -662,7 +771,7 @@ wss.on('connection',ws=>{
       if(!['剪刀','石頭','布'].includes(m.choice))return send(p,{type:'error',message:'猜拳選項無效'});
       if(x.rps.choices[p.pid])return send(p,{type:'error',message:'你本輪已經出拳，請等待結果'});
       x.rps.choices[p.pid]=m.choice;resolveAiExtraRps(x);broadcast(x);
-    }else if(m.action==='chooseColor'&&!x.ai&&!isExtraMode(x.mode)){const e=chooseColor(x,p,m.color);if(e)send(p,{type:'error',message:e});else broadcast(x);}
+    }else if(m.action==='chooseColor'&&x.mode==='checkers'){const e=chooseCheckerColor(x,p,String(m.color));if(e)send(p,{type:'error',message:e});else {broadcast(x);if(x.ai&&x.rps.phase==='choose-color'&&x.rps.colorTurnPid==='ai')setTimeout(()=>aiChooseCheckerColor(x),350);}}else if(m.action==='chooseColor'&&!x.ai&&!isExtraMode(x.mode)){const e=chooseColor(x,p,m.color);if(e)send(p,{type:'error',message:e});else broadcast(x);}
     else if(m.action==='chat'){
       if(x.ai)return send(p,{type:'error',message:'單人模式沒有聊天室'});if(!isExtraMode(x.mode)&&x.rps?.phase!=='done')return send(p,{type:'error',message:'目前無法聊天'});if(!x.g.turn||x.g.winner)return send(p,{type:'error',message:'目前無法聊天'});
       const text=String(m.text||'').trim().slice(0,200);if(!text)return;x.chat.push({pid:p.pid,name:p.name,avatar:p.avatar,text,ts:Date.now()});if(x.chat.length>100)x.chat=x.chat.slice(-100);broadcast(x);
@@ -697,7 +806,7 @@ wss.on('connection',ws=>{
     else if(m.action==='inviteRematch'&&!x.ai){const e=inviteRematch(x,p);if(e)send(p,{type:'error',message:e});else broadcast(x);}
     else if(m.action==='rematchResponse'&&!x.ai){
       const inv=x.rematchInvite;if(!inv||inv.toPid!==p.pid)return send(p,{type:'error',message:'沒有等待中的再戰邀請'});x.rematchInvite=null;if(m.accept){resetOnlineRound(x);broadcast(x);}else{const inviter=x.players.find(q=>q.pid===inv.fromPid);if(inviter)send(inviter,{type:'notice',message:`${p.name} 暫時不進行下一場。`});broadcast(x);}
-    }else if(m.action==='aiRematch'&&x.ai){x.g=newGame(x.mode);x.undoStack=[];x.checkEvent=null;x.chat=[];if(isBanqi(x.mode)){p.color=null;x.aiColor=null;x.g.turn=p.pid;x.g.started=true;setTurnDeadline(x);}else if(x.mode==='checkers'){checkerInit(x);x.g.turn=p.pid;setTurnDeadline(x);}else{x.g.turn=p.color;setTurnDeadline(x);}broadcast(x);}
+    }else if(m.action==='aiRematch'&&x.ai){x.g=newGame(x.mode);x.undoStack=[];x.checkEvent=null;x.chat=[];if(isBanqi(x.mode)){p.color=null;x.aiColor=null;x.g.turn=p.pid;x.g.started=true;setTurnDeadline(x);}else if(x.mode==='checkers'){p.color=null;x.aiColor=null;x.g.board={};x.g.turn=null;x.g.started=false;x.checkerColorOrder=[];x.checkerColorByPid={};x.rps=newRps();setTimeout(()=>aiExtraRpsChoose(x),400);}else{x.g.turn=p.color;setTurnDeadline(x);}broadcast(x);}
   });
   ws.on('close',()=>{
     if(p&&!x)removeFromMatchmaking(p);if(!x||!p)return;
@@ -713,4 +822,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.2 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4 multi-game on ${PORT}`));
