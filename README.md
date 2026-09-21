@@ -95,6 +95,6 @@ Fixed revealed Banqi/暗棋 cannon pieces rendering blank by using the centraliz
 ## v3.4.16
 - Responsive mobile/tablet layout with automatic device detection; game rules and controls are unchanged.
 
-## v3.4.17
+## v3.4.18
 - 加入房間採兩階段驗證：先檢查房間存在、有人且有空位，再加入；伺服器加入時會再次檢查。
 - 快速匹配只有在配對到足夠玩家後才建立對局房間，並以 match-found 事件切換離開匹配等待。

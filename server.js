@@ -862,6 +862,7 @@ function createRoom(mode,matchmade=false,ai=false,maxPlayers=null){
 }
 function playerList(x){return x.players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null,connected:p.connected!==false,camp:p.camp||null,targetCamp:p.targetCamp||null})).concat(x.ai?[{pid:'ai',name:'電腦',avatar:'🤖',color:x.mode==='xiangqi'?'black':x.mode==='checkers'?(x.aiColor||'blue'):(x.aiColor||'white'),connected:true,camp:x.mode==='checkers'?(x.aiCamp||null):null,targetCamp:x.mode==='checkers'?(x.aiTargetCamp||null):null}]:[]);}
 function send(p,o){if(p?.ws?.readyState===1)p.ws.send(JSON.stringify(o));}
+function wsSend(ws,o){if(ws?.readyState===1)ws.send(JSON.stringify(o));}
 function publicBanqiBoard(x){
   return x.g.board.map(row=>row.map(cell=>{
     if(!cell)return null;
@@ -1273,16 +1274,16 @@ wss.on('connection',ws=>{
       send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
       if(isExtraMode(mode))setTimeout(()=>aiExtraRpsChoose(x),500);
     }else if(m.action==='checkRoom'){
-      if(x||p)return send(ws,{type:'room-check',ok:false,error:'目前連線已有對局，請先離開。'});
+      if(x||p)return wsSend(ws,{type:'room-check',ok:false,error:'目前連線已有對局，請先離開。'});
       const result=checkJoinableRoom(m.roomId);
       if(result.ok)joinCheck={roomId:result.roomId,expires:Date.now()+15000};
       else joinCheck=null;
-      send(ws,{type:'room-check',...result});
+      wsSend(ws,{type:'room-check',...result});
     }else if(m.action==='join'){
       const requested=String(m.roomId||'').trim().toUpperCase();
       const result=checkJoinableRoom(requested);
-      if(!result.ok){joinCheck=null;return send(ws,{type:'error',message:result.error});}
-      if(x||p||!joinCheck||joinCheck.roomId!==result.roomId||Date.now()>joinCheck.expires){joinCheck=null;return send(ws,{type:'error',message:'請先檢查房間是否存在且可加入，然後再加入。'});}
+      if(!result.ok){joinCheck=null;return wsSend(ws,{type:'error',message:result.error});}
+      if(x||p||!joinCheck||joinCheck.roomId!==result.roomId||Date.now()>joinCheck.expires){joinCheck=null;return wsSend(ws,{type:'error',message:'請先檢查房間是否存在且可加入，然後再加入。'});}
       x=rooms.get(result.roomId);
       p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};joinCheck=null;x.players.push(p);
       if(x.players.length===x.maxPlayers){ if(x.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;} else if(isBanqi(x.mode)){x.g.started=true;x.g.turn=null;setTurnDeadline(x);} }
