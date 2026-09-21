@@ -1,5 +1,7 @@
 
 let ws=null,state=null,myPid=null,myColor=null,screenMode='home-screen',selected=null,lastCheckId=null,checkTimer=null,avatar='🧑🏻',draftAvatar='🧑🏻',soundOn=true,clockTimer=null,lastBoard=null;
+let pendingJoinRoom=null;
+let matchmakingActive=false;
 let selectedGameMode='xiangqi';
 const $=id=>document.getElementById(id);
 
@@ -101,6 +103,16 @@ function loadProfile(){
 }
 function loadAvatarPickerSelection(){const p=$('avatar-picker');if(!p)return;p.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.textContent===draftAvatar));}
 
+function freshConnect(){
+  try{ws?.close()}catch{}
+  ws=null;state=null;myPid=null;myColor=null;
+  connect();
+}
+function setRoomJoinStatus(text,kind=''){
+  let el=$('home-room-status');
+  if(!el){el=document.createElement('div');el.id='home-room-status';el.className='room-join-status';const inp=$('home-room');inp?.parentElement?.appendChild(el);}
+  el.textContent=text;el.className='room-join-status '+kind;
+}
 function connect(){
   if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return;
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
@@ -130,13 +142,15 @@ function showMatchmaking(status){
   }
 }
 function startMatchmaking(){
-  ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'matchmake',mode:selectedGameMode,playerCount:selectedGameMode==='checkers'?Number($('checkers-player-count').value):2,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go();
+  ensureSavedProfile();pendingJoinRoom=null;freshConnect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'matchmake',mode:selectedGameMode,playerCount:selectedGameMode==='checkers'?Number($('checkers-player-count').value):2,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go();
 }
 function handle(m){
   if(m.type==='error'){toast(m.message,'error');return}
   if(m.type==='notice'){toast(m.message);return}
   if(m.type==='proposal'){showProposal(m.kind,m.fromName);return}
-  if(m.type==='matchmaking'){if(m.status==='searching')showMatchmaking('searching');else showMatchmaking('cancelled');return}
+  if(m.type==='matchmaking'){if(m.status==='searching'){matchmakingActive=true;showMatchmaking('searching')}else{matchmakingActive=false;showMatchmaking('cancelled')}return}
+  if(m.type==='match-found'){matchmakingActive=false;$('matchmaking-panel').hidden=true;toast('已匹配到對手，正在建立本局大廳…');showScreen('lobby-screen');return}
+  if(m.type==='room-check'){if(m.ok){setRoomJoinStatus(`✅ 找到房間：${modeName(m.gameMode)}，目前 ${m.players?.length||0}/${m.maxPlayers} 人，可以加入。`,'ok');setTimeout(()=>{if(pendingJoinRoom===m.roomId){send({action:'join',roomId:m.roomId,name:profile.name,avatar:profile.avatar,profileId:profile.id})}},80)}else{pendingJoinRoom=null;setRoomJoinStatus(`❌ ${m.error||'房間不可加入。'}`,'error')}return}
   if(m.type==='rematch-invite'){if(m.ended&&m.roomId&&state?.roomId===m.roomId&&state?.winner)showRematchInvite(m.fromName);else hideRematchInvite();return}
   if(m.type==='lobby-sync'){
     state={...state,roomId:m.matchmade?null:(m.roomId||state?.roomId||null),matchmade:!!m.matchmade,gameMode:m.gameMode||state?.gameMode,maxPlayers:m.maxPlayers||state?.maxPlayers||2,players:m.players||state?.players||[],spectators:m.spectators||0};
@@ -146,6 +160,7 @@ function handle(m){
   if(m.type==='room'){
     hideRematchInvite();myPid=m.pid||myPid;myColor=m.color||null;
     state={...state,mode:m.mode,gameMode:m.gameMode||selectedGameMode,difficulty:m.difficulty||null,matchmade:!!m.matchmade,roomId:m.roomId||null,spectatorCode:m.spectatorCode||m.roomId||null,color:m.color||null,players:state?.players||[],spectators:state?.spectators||0};
+    if(m.matchmade){matchmakingActive=false;$('matchmaking-panel').hidden=true;}
     if(m.mode==='ai'||m.mode==='spectator')showScreen('game-screen');else showScreen('lobby-screen');
     return;
   }
@@ -518,7 +533,12 @@ $('matchmaking-cancel').onclick=()=>send({action:'cancelMatchmake'});
 $('home-watch').onclick=()=>{const room=$('home-watch-room').value.trim().toUpperCase();if(!room)return toast('請先輸入觀戰碼','error');ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'watch',roomId:room,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
 $('home-match').onclick=startMatchmaking;
 $('home-online').onclick=()=>{ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'create',mode:selectedGameMode,playerCount:selectedGameMode==='checkers'?Number($('checkers-player-count').value):2,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
-$('home-join').onclick=()=>{const room=$('home-room').value.trim().toUpperCase();if(!room)return toast('請先輸入房號','error');ensureSavedProfile();connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'join',roomId:room,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go()};
+$('home-join').onclick=()=>{
+  const room=$('home-room').value.trim().toUpperCase();
+  if(!room)return toast('請先輸入房號','error');
+  ensureSavedProfile();pendingJoinRoom=room;setRoomJoinStatus('🔎 正在檢查房間是否存在、是否已有玩家、是否還有空位…');freshConnect();
+  const go=()=>ws.readyState===WebSocket.OPEN?send({action:'checkRoom',roomId:room,name:profile.name,avatar:profile.avatar,profileId:profile.id}):setTimeout(go,40);go();
+};
 $('home-ai').onclick=()=>{ensureSavedProfile();const difficulty=$('home-difficulty').value;connect();const go=()=>ws.readyState===WebSocket.OPEN?send({action:'ai',mode:selectedGameMode,name:profile.name,avatar:profile.avatar,profileId:profile.id,difficulty}):setTimeout(go,40);go()};
 $('back-home').onclick=$('game-home').onclick=()=>{try{ws?.close()}catch{}state=null;selected=null;myColor=null;myPid=null;hideRematchInvite();showScreen('home-screen');loadProfile()};
 $('copy-room').onclick=()=>copyText(state?.roomId||$('lobby-room').textContent);

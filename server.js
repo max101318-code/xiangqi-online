@@ -884,17 +884,40 @@ function broadcastLobbySync(x){
   const payload={type:'lobby-sync',roomId:x.id,matchmade:!!x.matchmade,gameMode:x.mode,maxPlayers:x.maxPlayers||2,players:playerList(x),spectators:(x.spectators||[]).length};
   for(const p of x.players)send(p,payload);
 }
+function checkJoinableRoom(roomId){
+  const id=String(roomId||'').trim().toUpperCase();
+  const x=rooms.get(id);
+  if(!x)return {ok:false,error:'找不到這個房間。請確認房號是否正確。'};
+  if(x.ai)return {ok:false,error:'這是人機房間，不能加入。'};
+  const players=x.players.filter(p=>p.connected!==false);
+  if(players.length<1)return {ok:false,error:'這個房間目前沒有玩家，無法加入。'};
+  if(players.length>=(x.maxPlayers||2))return {ok:false,error:'這個房間已滿。'};
+  if(x.g?.winner)return {ok:false,error:'這場對局已經結束，不能加入。'};
+  return {ok:true,roomId:x.id,gameMode:x.mode,maxPlayers:x.maxPlayers||2,players:players.map(p=>({pid:p.pid,name:p.name,avatar:p.avatar,color:p.color||null})),spectators:x.spectators?.length||0,matchmade:!!x.matchmade};
+}
 function broadcastMatchmakingWaiting(item){send(item.p,{type:'matchmaking',status:'searching',mode:item.mode});}
 function removeFromMatchmaking(p){for(let i=matchmakingQueue.length-1;i>=0;i--)if(matchmakingQueue[i].p===p)matchmakingQueue.splice(i,1);}
 function tryMatchmaking(){
   for(let i=0;i<matchmakingQueue.length;i++){
     const first=matchmakingQueue[i];if(!first||first.cancelled||first.p.ws.readyState!==1){matchmakingQueue.splice(i--,1);continue;}
-    const need=first.capacity||2;if(need<=2){let j=-1;for(let k=i+1;k<matchmakingQueue.length;k++){const cand=matchmakingQueue[k];if(!cand||cand.cancelled||cand.p.ws.readyState!==1)continue;if(cand.mode===first.mode&&(cand.capacity||2)===need){j=k;break;}}if(j<0)continue;const second=matchmakingQueue[j];matchmakingQueue.splice(j,1);matchmakingQueue.splice(i,1);i--;const x=createRoom(first.mode,true,false,need);first.p.color=null;second.p.color=null;x.players.push(first.p,second.p);first.assign(x);second.assign(x);if(first.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;}send(first.p,{type:'room',roomId:null,pid:first.p.pid,color:first.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});send(second.p,{type:'room',roomId:null,pid:second.p.pid,color:second.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});broadcast(x);continue;}
+    const need=first.capacity||2;if(need<=2){let j=-1;for(let k=i+1;k<matchmakingQueue.length;k++){const cand=matchmakingQueue[k];if(!cand||cand.cancelled||cand.p.ws.readyState!==1)continue;if(cand.mode===first.mode&&(cand.capacity||2)===need){j=k;break;}}if(j<0)continue;const second=matchmakingQueue[j];matchmakingQueue.splice(j,1);matchmakingQueue.splice(i,1);i--;const x=createRoom(first.mode,true,false,need);
+      first.matched=true;second.matched=true;first.p.color=null;second.p.color=null;x.players.push(first.p,second.p);first.assign(x);second.assign(x);
+      if(first.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;}
+      [first,second].forEach(it=>{
+        send(it.p,{type:'match-found',gameMode:x.mode,maxPlayers:x.maxPlayers||2,players:x.players.map(q=>({pid:q.pid,name:q.name,avatar:q.avatar,color:q.color||null}))});
+        send(it.p,{type:'room',roomId:null,pid:it.p.pid,color:it.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});
+      });
+      broadcast(x);broadcastLobbySync(x);continue;}
     const group=[first];for(let k=i+1;k<matchmakingQueue.length&&group.length<need;k++){const cand=matchmakingQueue[k];if(!cand||cand.cancelled||cand.p.ws.readyState!==1)continue;if(cand.mode===first.mode&&(cand.capacity||2)===need)group.push(cand);}
     if(group.length<need)continue;
     for(const item of group){const idx=matchmakingQueue.indexOf(item);if(idx>=0)matchmakingQueue.splice(idx,1);}
-    const x=createRoom(first.mode,true,false,need);group.forEach(it=>{it.assign(x);it.p.color=null;x.players.push(it.p)});if(first.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;}else if(isBanqi(first.mode)){x.g.started=true;x.g.turn=x.players[0].pid;setTurnDeadline(x);}
-    group.forEach(it=>send(it.p,{type:'room',roomId:null,pid:it.p.pid,color:it.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id}));broadcast(x);i=-1;
+    const x=createRoom(first.mode,true,false,need);group.forEach(it=>{it.assign(x);it.p.color=null;it.matched=true;x.players.push(it.p)});
+    if(first.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;}else if(isBanqi(first.mode)){x.g.started=true;x.g.turn=x.players[0].pid;setTurnDeadline(x);}
+    group.forEach(it=>{
+      send(it.p,{type:'match-found',gameMode:x.mode,maxPlayers:x.maxPlayers||2,players:x.players.map(q=>({pid:q.pid,name:q.name,avatar:q.avatar,color:q.color||null}))});
+      send(it.p,{type:'room',roomId:null,pid:it.p.pid,color:it.p.color||null,mode:'online',gameMode:x.mode,matchmade:true,spectatorCode:x.id});
+    });
+    broadcast(x);broadcastLobbySync(x);i=-1;
   }
 }
 function resetOnlineRound(x){x.g=newGame(x.mode);x.players.forEach(p=>{p.color=null;p.camp=null;p.targetCamp=null});x.rps=newRps();x.rps.activePids=x.players.map(p=>p.pid);x.rematchInvite=null;x.proposal=null;x.checkEvent=null;x.chat=[];if(isBanqi(x.mode))initBanqiBoard(x.g);if(x.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;x.checkerColorOrder=[];} }
@@ -1221,7 +1244,7 @@ const server=http.createServer((req,res)=>{
 });
 const wss=new WebSocketServer({server});
 wss.on('connection',ws=>{
-  let x=null,p=null;
+  let x=null,p=null,joinCheck=null;
   ws.on('message',raw=>{
     let m;try{m=JSON.parse(raw)}catch{return}
     if(m.action==='create'){
@@ -1249,10 +1272,19 @@ wss.on('connection',ws=>{
       if(mode==='xiangqi'){p.color='red';x.g.turn=p.color;setTurnDeadline(x);} else if(mode==='gomoku'||mode==='go'){p.color='black';x.g.turn=p.color;setTurnDeadline(x);} else if(isBanqi(mode)){initBanqiBoard(x.g);x.g.turn=null;x.g.started=true;} else if(mode==='checkers'){p.color='blue';x.aiColor='red';x.checkerColorByPid={ [p.pid]:'blue', ai:'red' };x.g.board={};x.g.turn=null;x.g.started=false;}
       send(p,{type:'room',roomId:null,pid:p.pid,color:p.color,mode:'ai',gameMode:mode,difficulty,spectatorCode:x.id});send(p,publicSnapshot(x,p));
       if(isExtraMode(mode))setTimeout(()=>aiExtraRpsChoose(x),500);
+    }else if(m.action==='checkRoom'){
+      if(x||p)return send(ws,{type:'room-check',ok:false,error:'目前連線已有對局，請先離開。'});
+      const result=checkJoinableRoom(m.roomId);
+      if(result.ok)joinCheck={roomId:result.roomId,expires:Date.now()+15000};
+      else joinCheck=null;
+      send(ws,{type:'room-check',...result});
     }else if(m.action==='join'){
-      x=rooms.get(String(m.roomId||'').trim().toUpperCase());
-      if(!x||x.ai||x.players.length>=x.maxPlayers)return send({ws},{type:'error',message:'房間不存在、已滿，或這是人機房間'});
-      p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};x.players.push(p);
+      const requested=String(m.roomId||'').trim().toUpperCase();
+      const result=checkJoinableRoom(requested);
+      if(!result.ok){joinCheck=null;return send(ws,{type:'error',message:result.error});}
+      if(x||p||!joinCheck||joinCheck.roomId!==result.roomId||Date.now()>joinCheck.expires){joinCheck=null;return send(ws,{type:'error',message:'請先檢查房間是否存在且可加入，然後再加入。'});}
+      x=rooms.get(result.roomId);
+      p={ws,pid:pid(),role:'player',profileId:String(m.profileId||''),name:String(m.name||'玩家2').slice(0,12),avatar:normalizeAvatar(m.avatar),color:null,connected:true};joinCheck=null;x.players.push(p);
       if(x.players.length===x.maxPlayers){ if(x.mode==='checkers'){x.g.board={};x.g.turn=null;x.g.started=false;} else if(isBanqi(x.mode)){x.g.started=true;x.g.turn=null;setTurnDeadline(x);} }
       send(p,{type:'room',roomId:x.id,pid:p.pid,color:null,mode:'online',gameMode:x.mode,matchmade:!!x.matchmade,spectatorCode:x.id});
       broadcast(x);broadcastLobbySync(x);setTimeout(()=>{if(rooms.get(x.id)===x)broadcastLobbySync(x)},250);
@@ -1340,4 +1372,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.16 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.17 multi-game on ${PORT}`));
