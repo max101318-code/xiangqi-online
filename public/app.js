@@ -2,6 +2,26 @@
 let ws=null,state=null,myPid=null,myColor=null,screenMode='home-screen',selected=null,lastCheckId=null,checkTimer=null,avatar='🧑🏻',draftAvatar='🧑🏻',soundOn=true,clockTimer=null,lastBoard=null;
 let selectedGameMode='xiangqi';
 const $=id=>document.getElementById(id);
+
+// v3.4.16：裝置偵測。只負責套用 responsive 樣式，不改任何遊戲規則或對局邏輯。
+(function setupDeviceDetection(){
+  const apply=()=>{
+    const coarse=window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    const narrow=window.matchMedia?.('(max-width: 760px)').matches ?? (window.innerWidth<=760);
+    const mobile=narrow && (coarse || 'ontouchstart' in window || navigator.maxTouchPoints>0);
+    document.documentElement.dataset.device=mobile?'mobile':'desktop';
+    document.documentElement.dataset.orientation=window.innerWidth>window.innerHeight?'landscape':'portrait';
+    document.body.classList.toggle('is-mobile-device',mobile);
+    document.body.classList.toggle('is-touch-device',coarse || 'ontouchstart' in window || navigator.maxTouchPoints>0);
+  };
+  apply();
+  window.addEventListener('resize',apply,{passive:true});
+  window.addEventListener('orientationchange',()=>setTimeout(apply,50),{passive:true});
+  if(window.matchMedia){
+    const mq=window.matchMedia('(max-width: 760px)');
+    mq.addEventListener?.('change',apply);
+  }
+})();
 const CH={K:'帥',A:'仕',B:'相',N:'傌',R:'俥',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'炮',p:'卒'};
 const AVATARS=['🧑🏻','🧑🏼','🧑🏽','🧑🏾','🧑🏿','🐱','🐼','🦊','🐯','🐸','🤖','👾','🦄','🐲','😎','🥷'];
 const MODE_NAMES={xiangqi:'中國象棋',gomoku:'五子棋',go:'圍棋',banqi:'明棋',darkbanqi:'暗棋（連吃版）',checkers:'多人跳棋'};
@@ -311,9 +331,9 @@ function renderCheckersBoard(board,previousBoard=null,previousHistory=[]){
   board.innerHTML='';board.className='checkers-board';
   const art=document.createElement('img');
   art.className='checker-reference-image';
-  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.15';
+  art.src=window.CHECKERS_REFERENCE_DATA_URL||'/checkers-board-reference.png?v=3.4.16';
   art.alt='跳棋棋盤';art.draggable=false;
-  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.15';}};
+  art.onerror=()=>{if(art.dataset.fallback!=='1'){art.dataset.fallback='1';art.src='/checkers-board-reference.webp?v=3.4.16';}};
   board.appendChild(art);
   const layer=document.createElement('div');layer.className='checker-hit-layer';board.appendChild(layer);
   for(const h of (state.holes||[])){

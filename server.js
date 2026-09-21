@@ -1340,4 +1340,4 @@ wss.on('connection',ws=>{
   });
 });
 setInterval(()=>{for(const x of rooms.values())if(x.g?.turnDeadline&&Date.now()>x.g.turnDeadline&&!x.g.winner)timeOut(x);tryMatchmaking();},500);
-server.listen(PORT,()=>console.log(`Board Arena Online v3.4.15 multi-game on ${PORT}`));
+server.listen(PORT,()=>console.log(`Board Arena Online v3.4.16 multi-game on ${PORT}`));

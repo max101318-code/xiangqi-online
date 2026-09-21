@@ -121,3 +121,126 @@
 @keyframes banqi-reveal-pulse{0%{box-shadow:0 0 0 0 rgba(103,220,165,.9),3px 3px 7px rgba(0,0,0,.24)}55%{box-shadow:0 0 0 8px rgba(103,220,165,0),3px 3px 7px rgba(0,0,0,.24)}100%{box-shadow:0 0 0 0 rgba(103,220,165,0),3px 3px 7px rgba(0,0,0,.24)}}
 
 /* v3.4.12 AI hidden-information + Chinese Checkers fallback fixes. */
+
+
+/* v3.4.16 mobile / tablet adaptation. Functional logic unchanged. */
+html,body{max-width:100%;overflow-x:hidden}body{min-height:100dvh;-webkit-text-size-adjust:100%;overscroll-behavior-x:none}.screen{width:min(1200px,100%);padding-left:clamp(12px,3vw,20px);padding-right:clamp(12px,3vw,20px)}button,input,select{font:inherit}button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}.board-shell,#board,.checkers-board,.banqi-board{touch-action:manipulation}
+
+@media (max-width: 900px){
+  .site-header,.screen-header{align-items:flex-start;flex-direction:column}
+  .site-header .status-pill{align-self:flex-start}
+  .hero-grid{grid-template-columns:1fr}
+  .home-bottom{grid-template-columns:1fr}
+  .lobby-layout,.game-layout{grid-template-columns:1fr}
+  .side-panel,.game-side{width:100%}
+  .game-toolbar{grid-template-columns:1fr 120px 1fr;gap:8px}
+  .game-layout{margin-top:14px}
+  .board-area{min-width:0}
+  .game-side{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .game-side .panel-card{margin-top:0}
+  .chat-card{grid-column:1/-1}
+}
+
+@media (max-width: 760px){
+  .screen{padding-top:16px;padding-bottom:32px}
+  .site-header h1{font-size:clamp(36px,12vw,58px)}
+  .screen-header h2{font-size:clamp(28px,9vw,44px)}
+  .site-header p{font-size:14px;line-height:1.5}
+  .hero-card,.feature-card,.info-card,.players-card,.side-panel,.panel-card,.lobby-rules{border-radius:16px}
+  .hero-card,.feature-card,.panel-card,.side-panel{padding:14px}
+  .profile-row{align-items:flex-start;flex-direction:column}
+  .profile-main{width:100%}
+  .name-save-row,.online-start,.ai-start,.watch-start,.profile-tools,.choice-row{width:100%}
+  .name-save-row{display:grid;grid-template-columns:1fr auto;gap:7px}
+  .name-input{width:100%;min-width:0}
+  .small-btn,.online-start button,.ai-start button,.watch-start button,.choice-row button,.full,.action-grid button{min-height:44px}
+  .online-start{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .online-start input{grid-column:1/-1;min-height:44px;min-width:0}
+  .online-start .match-btn{grid-column:1/-1}
+  .ai-start{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .ai-start select{min-height:44px}
+  .watch-start{display:grid;grid-template-columns:1fr;gap:8px}
+  .watch-start input,.watch-start button{width:100%;min-height:44px}
+  .game-mode-picker{grid-template-columns:1fr 1fr;gap:8px}
+  .game-mode{min-height:48px;padding:10px 8px}
+  .mode-grid{grid-template-columns:1fr}
+  .mode-card{min-height:0;padding:14px}
+  .stats-card-wide{grid-template-columns:repeat(3,1fr);gap:8px}
+  .stats-card-wide>div{min-width:0}
+  .room-code-box{width:100%;justify-content:space-between}
+  .players-card{grid-template-columns:1fr 44px 1fr;gap:6px;padding:12px}
+  .slot{gap:8px;min-width:0}
+  .slot b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .slot em{display:none}
+  .choice-row{flex-wrap:wrap}
+  .choice-row button{flex:1 1 30%;min-width:96px}
+  .game-header{gap:12px}
+  .game-meta-actions{width:100%}
+  .game-meta-actions .top-meta{flex:1;min-width:0;word-break:break-all}
+  .game-toolbar{grid-template-columns:1fr 86px 1fr;gap:6px}
+  .player-chip{padding:8px 9px;gap:8px;border-radius:12px;min-width:0}
+  .player-chip .avatar{width:46px;height:46px;font-size:24px;flex:0 0 auto}
+  .player-chip b{font-size:13px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .player-chip span{font-size:11px}
+  .player-chip.opponent{justify-content:flex-end}
+  .turn-box{padding:8px 7px;grid-template-columns:1fr auto auto;gap:3px}
+  .turn-box b{font-size:28px}
+  .game-layout{display:flex;flex-direction:column;gap:12px}
+  .game-side{display:flex;flex-direction:column;width:100%;gap:10px}
+  .history{max-height:220px}
+  .chat-messages{max-height:220px}
+  .action-grid{gap:7px}
+  .action-grid button{padding:8px 7px}
+  .ai-rps-panel{padding:12px;align-items:stretch;flex-direction:column}
+  .ai-rps-panel .choice-row{width:100%}
+  .ai-rps-panel button{min-height:44px}
+  .current-version{right:8px;bottom:max(8px,env(safe-area-inset-bottom));font-size:10px;padding:4px 7px}
+
+  /* 交叉點棋盤：保持格點幾何，只把可視範圍縮到手機寬度。 */
+  .point-board{width:100%;max-width:100vw}
+  .board-intersection{min-width:0;min-height:0}
+  .board-shell{padding:8px;border-radius:16px}
+  #board{border-width:5px}
+
+  /* 4x8 棋：手機上仍維持 4:8 比例，整盤完整可見。 */
+  .banqi-board{width:min(100%,420px);margin:0 auto}
+
+  /* 跳棋參考圖：不裁切、不變形，整張圖保持完整。 */
+  .checkers-board{width:100%;max-width:100%;height:auto;margin:0 auto}
+  .checker-reference-image{object-fit:contain;object-position:center center}
+  .checker-hole{min-width:10px;min-height:10px;width:5.8%;height:5.8%}
+  .checker-motion-piece{min-width:10px;width:5.8%}
+}
+
+@media (max-width: 430px){
+  .screen{padding-left:10px;padding-right:10px}
+  .hero-card,.feature-card{padding:12px}
+  .site-header h1{font-size:42px}
+  .game-toolbar{grid-template-columns:1fr 74px 1fr}
+  .player-chip{padding:7px}
+  .player-chip .avatar{width:40px;height:40px;font-size:21px}
+  .player-chip b{max-width:72px;font-size:12px}
+  .turn-box b{font-size:25px}
+  .choice-row button{min-width:0;font-size:13px;padding:9px 7px}
+  .action-grid button{font-size:13px}
+  .room-code-box{font-size:12px}
+}
+
+/* 橫向手機：讓棋盤與側欄同時有足夠空間。 */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 600px){
+  .screen{padding-top:10px;padding-bottom:18px}
+  .site-header{flex-direction:row;align-items:flex-end}
+  .site-header h1{font-size:36px}
+  .hero-grid{grid-template-columns:1fr 1.25fr}
+  .home-bottom{grid-template-columns:repeat(3,1fr)}
+  .game-toolbar{grid-template-columns:1fr 100px 1fr}
+  .game-layout{grid-template-columns:minmax(0,1fr) 250px;display:grid}
+  .game-side{display:flex;flex-direction:column}
+}
+
+/* 實體觸控裝置：增加按鈕命中區，不改桌面滑鼠版大小。 */
+html[data-device="mobile"] .action-grid button,
+html[data-device="mobile"] .game-mode,
+html[data-device="mobile"] .choice-row button,
+html[data-device="mobile"] .small-btn,
+html[data-device="mobile"] .full{min-height:44px}

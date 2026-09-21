@@ -88,6 +88,9 @@ Fixed revealed Banqi/暗棋 cannon pieces rendering blank by using the centraliz
 - 黃色中央區／營地外邊界仍可正常走或跳。
 - AI 與真人共用相同的落點營地限制。
 
-### v3.4.15 跳棋營地前排限制
+### v3.4.16 跳棋營地前排限制
 - 進入其他玩家的營地時，只允許落在最靠近中央黃色六邊形的前排 5 個棋孔。
 - 自己的起始營地與目標營地維持完整可進入。
+
+## v3.4.16
+- Responsive mobile/tablet layout with automatic device detection; game rules and controls are unchanged.
