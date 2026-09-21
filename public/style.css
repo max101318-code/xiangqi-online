@@ -185,7 +185,10 @@ html,body{max-width:100%;overflow-x:hidden}body{min-height:100dvh;-webkit-text-s
   .player-chip.opponent{justify-content:flex-end}
   .turn-box{padding:8px 7px;grid-template-columns:1fr auto auto;gap:3px}
   .turn-box b{font-size:28px}
-  .game-layout{display:flex;flex-direction:column;gap:12px}
+  .game-layout{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+  .board-area{width:100%;min-width:0}
+  .board-shell{width:100%}
+  #board,.point-board,.banqi-board,.checkers-board{max-width:100%;}
   .game-side{display:flex;flex-direction:column;width:100%;gap:10px}
   .history{max-height:220px}
   .chat-messages{max-height:220px}
